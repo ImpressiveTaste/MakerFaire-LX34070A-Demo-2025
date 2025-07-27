@@ -2,7 +2,7 @@
 
 **Last updated:** July 27, 2025
 
-This repository showcases several Microchip demos built around the LX34070A inductive sensor. Python GUIs connect to the target through [pyX2Cscope](https://github.com/X2Cscope/pyx2cscope) when available, but all programs also have a demo mode that simulates data so they can run standalone.
+This repository showcases several demos built around the LX34070A inductive sensor. Python GUIs connect to the target through [pyX2Cscope](https://github.com/X2Cscope/pyx2cscope) when available, but all programs also have a demo mode that simulates data so they can run standalone.
 
 ![GUI Demo](GUIMotorGaugeDemo.png)
 
