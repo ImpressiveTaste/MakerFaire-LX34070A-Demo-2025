@@ -321,6 +321,45 @@ class DotWidget(QtWidgets.QWidget):
         finally:
             painter.end()
 
+
+class StarWidget(QtWidgets.QWidget):
+    """Five-pointed star rotating with the angle."""
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.angle = 0.0
+
+    def setAngle(self, ang: float) -> None:
+        self.angle = ang
+        self.update()
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401 - Qt override
+        painter = QtGui.QPainter(self)
+        try:
+            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            rect = self.rect()
+            radius = min(rect.width(), rect.height()) / 2 - 10
+            center = QtCore.QPointF(rect.center())
+            painter.save()
+            painter.translate(center)
+            painter.rotate(-math.degrees(self.angle))
+            path = QtGui.QPainterPath()
+            for i in range(5):
+                angle = math.radians(72 * i - 90)
+                x = radius * math.cos(angle)
+                y = radius * math.sin(angle)
+                if i == 0:
+                    path.moveTo(x, y)
+                else:
+                    path.lineTo(x, y)
+            path.closeSubpath()
+            painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.darkYellow, 2))
+            painter.setBrush(QtGui.QBrush(QtCore.Qt.GlobalColor.yellow))
+            painter.drawPath(path)
+            painter.restore()
+        finally:
+            painter.end()
+
 class WaveformWindow(QtWidgets.QMainWindow):
     """Window showing sine/cosine waveforms using pyqtgraph."""
 
@@ -353,6 +392,9 @@ class WaveformWindow(QtWidgets.QMainWindow):
         self.trigger_combo = QtWidgets.QComboBox()
         self.trigger_combo.addItems(["Sine", "Cosine", "Angle"])
         ctrl.addWidget(self.trigger_combo)
+        self.trig_enable = QtWidgets.QCheckBox("Enable")
+        self.trig_enable.setChecked(False)
+        ctrl.addWidget(self.trig_enable)
         ctrl.addStretch(1)
         vbox.addLayout(ctrl)
         self.setCentralWidget(central)
@@ -398,7 +440,10 @@ class WaveformWindow(QtWidgets.QMainWindow):
         trig_val = trig_map[self.trigger_combo.currentText()]
         now_abs = time.perf_counter()
 
-        if self.prev_trig_val < self.trigger_level <= trig_val:
+        if (
+            self.trig_enable.isChecked()
+            and self.prev_trig_val < self.trigger_level <= trig_val
+        ):
             self.t0_trigger = now_abs
             self.data_t.clear()
             self.data_s.clear()
@@ -423,7 +468,7 @@ class WaveformWindow(QtWidgets.QMainWindow):
         self.curve_s.setData(self.data_t, self.data_s)
         self.curve_c.setData(self.data_t, self.data_c)
         self.curve_a.setData(self.data_t, self.data_a)
-        self.plot.setXRange(0, win)
+        self.plot.setXRange(max(0, now - win), now)
 
 class MotorGaugeDemo(QtWidgets.QMainWindow):
     DT_MS = 20
@@ -447,6 +492,7 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
             "Triangle",
             "Arrow",
             "Dot",
+            "Star",
         ]
         self.rpm_vals = collections.deque(maxlen=20)
 
@@ -507,7 +553,7 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
             QtWidgets.QSizePolicy.Policy.Expanding,
             QtWidgets.QSizePolicy.Policy.Expanding,
         )
-        vbox.addWidget(self.stack)
+        vbox.addWidget(self.stack, alignment=QtCore.Qt.AlignmentFlag.AlignHCenter)
 
         self.dial = QtWidgets.QDial()
         self.dial.setWrapping(True)
@@ -546,6 +592,9 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
 
         self.dot_view = DotWidget()
         self.stack.addWidget(self.dot_view)
+
+        self.star_view = StarWidget()
+        self.stack.addWidget(self.star_view)
 
         self.size_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.size_slider.setRange(100, 400)
@@ -677,6 +726,7 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.triangle_view.setAngle(ang)
         self.arrow_view.setAngle(ang)
         self.dot_view.setAngle(ang)
+        self.star_view.setAngle(ang)
         self.lbl_angle.setText(f"Angle: {deg:.1f}°")
         self.lbl_speed.setText(f"Speed: {rpm:.1f} RPM")
         self.lbl_turns.setText(f"Turns: {self.turns:.2f}")
