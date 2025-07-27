@@ -144,18 +144,21 @@ class CompassWidget(QtWidgets.QWidget):
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401 - Qt override
         painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-        rect = self.rect()
-        radius = min(rect.width(), rect.height()) / 2 - 10
-        center = QtCore.QPointF(rect.center())
-        painter.drawEllipse(center, radius, radius)
-        painter.save()
-        painter.translate(center)
-        painter.rotate(-math.degrees(self.angle))
-        pen = QtGui.QPen(QtCore.Qt.GlobalColor.red, 3)
-        painter.setPen(pen)
-        painter.drawLine(0, 0, 0, -radius)
-        painter.restore()
+        try:
+            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            rect = self.rect()
+            radius = min(rect.width(), rect.height()) / 2 - 10
+            center = QtCore.QPointF(rect.center())
+            painter.drawEllipse(center, radius, radius)
+            painter.save()
+            painter.translate(center)
+            painter.rotate(-math.degrees(self.angle))
+            pen = QtGui.QPen(QtCore.Qt.GlobalColor.red, 3)
+            painter.setPen(pen)
+            painter.drawLine(QtCore.QLineF(0, 0, 0, -radius))
+            painter.restore()
+        finally:
+            painter.end()
 
 
 class MotorWidget(QtWidgets.QWidget):
@@ -171,19 +174,22 @@ class MotorWidget(QtWidgets.QWidget):
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401 - Qt override
         painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-        rect = self.rect()
-        body = QtCore.QRectF(rect.center().x() - 30, rect.center().y() - 20, 60, 40)
-        painter.drawRect(body)
-        radius = min(rect.width(), rect.height()) / 2 - 10
-        center = QtCore.QPointF(rect.center())
-        painter.save()
-        painter.translate(center)
-        painter.rotate(-math.degrees(self.angle))
-        pen = QtGui.QPen(QtCore.Qt.GlobalColor.blue, 3)
-        painter.setPen(pen)
-        painter.drawLine(0, 0, 0, -radius)
-        painter.restore()
+        try:
+            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            rect = self.rect()
+            body = QtCore.QRectF(rect.center().x() - 30, rect.center().y() - 20, 60, 40)
+            painter.drawRect(body)
+            radius = min(rect.width(), rect.height()) / 2 - 10
+            center = QtCore.QPointF(rect.center())
+            painter.save()
+            painter.translate(center)
+            painter.rotate(-math.degrees(self.angle))
+            pen = QtGui.QPen(QtCore.Qt.GlobalColor.blue, 3)
+            painter.setPen(pen)
+            painter.drawLine(QtCore.QLineF(0, 0, 0, -radius))
+            painter.restore()
+        finally:
+            painter.end()
 
 
 class WheelWidget(QtWidgets.QWidget):
@@ -199,20 +205,23 @@ class WheelWidget(QtWidgets.QWidget):
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401 - Qt override
         painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-        rect = self.rect()
-        radius = min(rect.width(), rect.height()) / 2 - 10
-        center = QtCore.QPointF(rect.center())
-        painter.drawEllipse(center, radius, radius)
-        painter.save()
-        painter.translate(center)
-        painter.rotate(-math.degrees(self.angle))
-        pen = QtGui.QPen(QtCore.Qt.GlobalColor.darkGray, 2)
-        painter.setPen(pen)
-        for _ in range(4):
-            painter.drawLine(0, 0, 0, -radius)
-            painter.rotate(90)
-        painter.restore()
+        try:
+            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            rect = self.rect()
+            radius = min(rect.width(), rect.height()) / 2 - 10
+            center = QtCore.QPointF(rect.center())
+            painter.drawEllipse(center, radius, radius)
+            painter.save()
+            painter.translate(center)
+            painter.rotate(-math.degrees(self.angle))
+            pen = QtGui.QPen(QtCore.Qt.GlobalColor.darkGray, 2)
+            painter.setPen(pen)
+            for _ in range(4):
+                painter.drawLine(QtCore.QLineF(0, 0, 0, -radius))
+                painter.rotate(90)
+            painter.restore()
+        finally:
+            painter.end()
 
 
 class WaveformWindow(QtWidgets.QMainWindow):
@@ -235,6 +244,20 @@ class WaveformWindow(QtWidgets.QMainWindow):
         self.plot.setLabel("bottom", "Time", units="s")
         self.plot.setLabel("left", "Value")
         vbox.addWidget(self.plot)
+
+        ctrl = QtWidgets.QHBoxLayout()
+        ctrl.addWidget(QtWidgets.QLabel("Time window:"))
+        self.win_spin = QtWidgets.QDoubleSpinBox()
+        self.win_spin.setRange(0.1, 10.0)
+        self.win_spin.setSingleStep(0.1)
+        self.win_spin.setValue(1.0)
+        ctrl.addWidget(self.win_spin)
+        ctrl.addWidget(QtWidgets.QLabel("Trigger:"))
+        self.trigger_combo = QtWidgets.QComboBox()
+        self.trigger_combo.addItems(["Sine", "Cosine", "Angle"])
+        ctrl.addWidget(self.trigger_combo)
+        ctrl.addStretch(1)
+        vbox.addLayout(ctrl)
         self.setCentralWidget(central)
 
         pen_s = pg.mkPen("b", width=1.5)
@@ -249,11 +272,17 @@ class WaveformWindow(QtWidgets.QMainWindow):
         self.data_c: list[float] = []
         self.data_a: list[float] = []
 
+        self.prev_trig_val = 0.0
+        self.trigger_level = 0.0
+        self.t0_trigger = time.perf_counter()
+
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self._update)
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:  # noqa: D401
         self.t0 = time.perf_counter()
+        self.t0_trigger = self.t0
+        self.prev_trig_val = 0.0
         self.data_t.clear()
         self.data_s.clear()
         self.data_c.clear()
@@ -267,20 +296,37 @@ class WaveformWindow(QtWidgets.QMainWindow):
 
     def _update(self) -> None:
         s, c, ang = self.scope.read_waveforms()
-        now = time.perf_counter() - self.t0
+
+        trig_map = {"Sine": s, "Cosine": c, "Angle": ang}
+        trig_val = trig_map[self.trigger_combo.currentText()]
+        now_abs = time.perf_counter()
+
+        if self.prev_trig_val < self.trigger_level <= trig_val:
+            self.t0_trigger = now_abs
+            self.data_t.clear()
+            self.data_s.clear()
+            self.data_c.clear()
+            self.data_a.clear()
+
+        self.prev_trig_val = trig_val
+        now = now_abs - self.t0_trigger
+
         self.data_t.append(now)
         self.data_s.append(s)
         self.data_c.append(c)
         self.data_a.append(ang / math.pi)
-        if len(self.data_t) > 1000:
+
+        win = self.win_spin.value()
+        while self.data_t and self.data_t[0] < now - win:
             self.data_t.pop(0)
             self.data_s.pop(0)
             self.data_c.pop(0)
             self.data_a.pop(0)
+
         self.curve_s.setData(self.data_t, self.data_s)
         self.curve_c.setData(self.data_t, self.data_c)
         self.curve_a.setData(self.data_t, self.data_a)
-        self.plot.setXRange(max(0, now - 5), now)
+        self.plot.setXRange(0, win)
 
 class MotorGaugeDemo(QtWidgets.QMainWindow):
     DT_MS = 20
