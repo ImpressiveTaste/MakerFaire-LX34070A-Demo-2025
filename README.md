@@ -15,16 +15,14 @@ This repository showcases several demos built around the LX34070A inductive sens
 - **`InductiveSensorDemo.py`** – PyQt6 version of the resolver signal monitor built with `pyqtgraph`.
 - **`InductiveSensorDemoTk.py`** – Tkinter variant of the resolver demo using `matplotlib` for plotting.
 - **`MotorLogger.py`** – A feature-rich logger that can start/stop the motor, log up to five variables with per-channel scaling and export the data.
-- **`main.c`** – Minimal firmware reading raw sine/cosine values and exposing them, along with the calculated position, via X2Cscope.
+- **`main.c`** – Minimal firmware reading raw sine/cosine values and exposing them, along with the calculated position, via X2Cscope. This is the meain.c file running in the dsPIC33CK. for the whole project extract the .zip file provided and open it through mplabXide. the .elf file can also be founf in the project folder in the .dist directory.
 
 ## Features
 
-- Connects to an MCAF-compatible target running the LX34070A firmware
+- Connects to a dsPIC33CK with ADCO and 1 connected to the LX34070A
 - Demo mode when `pyX2Cscope` is not installed
 - Multiple visualization options: dial gauge, slider, bar, LCD, compass and more
 - Resolver waveform plotting with triggers and calibration helper
-- Motor logger supports 1 ms sampling using X2Cscope scope channels
-- Optional channel scaling and export to CSV, Excel or MATLAB
 
 ## Requirements
 
