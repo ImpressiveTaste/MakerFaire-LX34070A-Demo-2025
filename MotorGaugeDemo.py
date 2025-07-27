@@ -406,14 +406,46 @@ class WaveformWindow(QtWidgets.QMainWindow):
         ctrl.addWidget(self.time_reset)
         ctrl.addStretch(1)
         vbox.addLayout(ctrl)
+
+        width_ctrl = QtWidgets.QHBoxLayout()
+        width_ctrl.addWidget(QtWidgets.QLabel("Sine width:"))
+        self.s_width = QtWidgets.QDoubleSpinBox()
+        self.s_width.setRange(0.5, 10.0)
+        self.s_width.setSingleStep(0.5)
+        self.s_width.setValue(1.5)
+        width_ctrl.addWidget(self.s_width)
+        width_ctrl.addWidget(QtWidgets.QLabel("Cosine width:"))
+        self.c_width = QtWidgets.QDoubleSpinBox()
+        self.c_width.setRange(0.5, 10.0)
+        self.c_width.setSingleStep(0.5)
+        self.c_width.setValue(1.5)
+        width_ctrl.addWidget(self.c_width)
+        width_ctrl.addWidget(QtWidgets.QLabel("Angle width:"))
+        self.a_width = QtWidgets.QDoubleSpinBox()
+        self.a_width.setRange(0.5, 10.0)
+        self.a_width.setSingleStep(0.5)
+        self.a_width.setValue(1.5)
+        width_ctrl.addWidget(self.a_width)
+        width_ctrl.addStretch(1)
+        vbox.addLayout(width_ctrl)
         self.setCentralWidget(central)
 
-        pen_s = pg.mkPen("b", width=1.5)
-        pen_c = pg.mkPen("g", width=1.5)
-        pen_a = pg.mkPen("m", width=1.5)
+        pen_s = pg.mkPen("b", width=self.s_width.value())
+        pen_c = pg.mkPen("g", width=self.c_width.value())
+        pen_a = pg.mkPen("m", width=self.a_width.value())
         self.curve_s = self.plot.plot(pen=pen_s, name="Sine")
         self.curve_c = self.plot.plot(pen=pen_c, name="Cosine")
         self.curve_a = self.plot.plot(pen=pen_a, name="Angle/π")
+
+        self.s_width.valueChanged.connect(
+            lambda v: self.curve_s.setPen(pg.mkPen("b", width=v))
+        )
+        self.c_width.valueChanged.connect(
+            lambda v: self.curve_c.setPen(pg.mkPen("g", width=v))
+        )
+        self.a_width.valueChanged.connect(
+            lambda v: self.curve_a.setPen(pg.mkPen("m", width=v))
+        )
 
         self.data_t: list[float] = []
         self.data_s: list[float] = []
@@ -513,7 +545,8 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
             "Dot",
             "Star",
         ]
-        self.rpm_vals = collections.deque(maxlen=20)
+        self.rpm_vals = collections.deque(maxlen=50)
+        self.quality_vals = collections.deque(maxlen=50)
 
         self.t0 = time.perf_counter()
         self.prev_ang: float | None = None
@@ -715,6 +748,7 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.prev_ang = None
         self.turns = 0.0
         self.rpm_vals.clear()
+        self.quality_vals.clear()
         self._scope.calibrate(duration=self.cal_time_spin.value())
         self._timer.start(self.DT_MS)
 
@@ -745,7 +779,9 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.prev_ang = ang
 
         amp = math.sqrt(s * s + c * c)
-        quality = max(0.0, min(100.0, (1 - abs(amp - 1.0)) * 100))
+        quality_inst = max(0.0, min(100.0, (1 - abs(amp - 1.0)) * 100))
+        self.quality_vals.append(quality_inst)
+        quality = sum(self.quality_vals) / len(self.quality_vals)
 
         deg = math.degrees(ang) % 360
         val = int(deg)
