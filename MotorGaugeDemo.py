@@ -99,16 +99,17 @@ class _ScopeWrapper:
             float(self.ang.get_value()),      # type: ignore[call-arg]
         )
 
-    def calibrate(self, samples: int = 200, delay: float = 0.005) -> None:
-        """Measure raw waveforms and update offset/amplitude registers.
+    def calibrate(self, duration: float = 1.0, delay: float = 0.005) -> None:
+        """Measure raw waveforms for ``duration`` seconds and update offsets.
 
-        The resolver generates sine and cosine signals that may be shifted
-        or scaled.  ``calibrate`` samples the raw values for ``samples``
-        iterations, finds their min/max, then computes offset and amplitude
+        The resolver generates sine and cosine signals that may be shifted or
+        scaled.  ``calibrate`` samples the raw values for roughly ``duration``
+        seconds, finds their min/max, then computes offset and amplitude
         correction factors which are written back to the target via X2CScope.
         """
         if self.demo or self.scope is None:
             return
+        samples = max(1, int(duration / delay))
         min_s = float("inf")
         max_s = float("-inf")
         min_c = float("inf")
@@ -395,6 +396,14 @@ class WaveformWindow(QtWidgets.QMainWindow):
         self.trig_enable = QtWidgets.QCheckBox("Enable")
         self.trig_enable.setChecked(False)
         ctrl.addWidget(self.trig_enable)
+        self.time_reset = QtWidgets.QCheckBox("Timed reset")
+        self.time_reset.setChecked(False)
+        self.time_reset.setToolTip(
+            "When unchecked, the graph scrolls continuously.\n"
+            "When checked, the display resets after each time window \n"
+            "if trigger is disabled."
+        )
+        ctrl.addWidget(self.time_reset)
         ctrl.addStretch(1)
         vbox.addLayout(ctrl)
         self.setCentralWidget(central)
@@ -439,6 +448,7 @@ class WaveformWindow(QtWidgets.QMainWindow):
         trig_map = {"Sine": s, "Cosine": c, "Angle": ang}
         trig_val = trig_map[self.trigger_combo.currentText()]
         now_abs = time.perf_counter()
+        win = self.win_spin.value()
 
         if (
             self.trig_enable.isChecked()
@@ -449,6 +459,13 @@ class WaveformWindow(QtWidgets.QMainWindow):
             self.data_s.clear()
             self.data_c.clear()
             self.data_a.clear()
+        elif not self.trig_enable.isChecked() and self.time_reset.isChecked():
+            if now_abs - self.t0_trigger >= win:
+                self.t0_trigger = now_abs
+                self.data_t.clear()
+                self.data_s.clear()
+                self.data_c.clear()
+                self.data_a.clear()
 
         self.prev_trig_val = trig_val
         now = now_abs - self.t0_trigger
@@ -458,7 +475,6 @@ class WaveformWindow(QtWidgets.QMainWindow):
         self.data_c.append(c)
         self.data_a.append(ang / math.pi)
 
-        win = self.win_spin.value()
         while self.data_t and self.data_t[0] < now - win:
             self.data_t.pop(0)
             self.data_s.pop(0)
@@ -468,7 +484,10 @@ class WaveformWindow(QtWidgets.QMainWindow):
         self.curve_s.setData(self.data_t, self.data_s)
         self.curve_c.setData(self.data_t, self.data_c)
         self.curve_a.setData(self.data_t, self.data_a)
-        self.plot.setXRange(max(0, now - win), now)
+        if self.trig_enable.isChecked() or self.time_reset.isChecked():
+            self.plot.setXRange(0, win)
+        else:
+            self.plot.setXRange(max(0, now - win), now)
 
 class MotorGaugeDemo(QtWidgets.QMainWindow):
     DT_MS = 20
@@ -538,13 +557,20 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.help_btn.clicked.connect(self._show_help)
         gl.addWidget(self.help_btn, 3, 2)
 
+        gl.addWidget(QtWidgets.QLabel("Cal. time (s):"), 4, 0)
+        self.cal_time_spin = QtWidgets.QDoubleSpinBox()
+        self.cal_time_spin.setRange(0.1, 10.0)
+        self.cal_time_spin.setSingleStep(0.1)
+        self.cal_time_spin.setValue(1.0)
+        gl.addWidget(self.cal_time_spin, 4, 1)
+
         self.wave_btn = QtWidgets.QPushButton("Show Waveforms")
         self.wave_btn.clicked.connect(self._show_waveforms)
-        gl.addWidget(self.wave_btn, 4, 0, 1, 3)
+        gl.addWidget(self.wave_btn, 5, 0, 1, 3)
 
         self.mode_btn = QtWidgets.QPushButton("Change View")
         self.mode_btn.clicked.connect(self._next_mode)
-        gl.addWidget(self.mode_btn, 5, 0, 1, 3)
+        gl.addWidget(self.mode_btn, 6, 0, 1, 3)
         self.mode_btn.setText(f"Mode: {self.modes[0]}")
         vbox.addWidget(conn_box)
 
@@ -618,6 +644,10 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.lbl_turns.setAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter)
         vbox.addWidget(self.lbl_turns)
 
+        self.lbl_quality = QtWidgets.QLabel("Quality: —")
+        self.lbl_quality.setAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter)
+        vbox.addWidget(self.lbl_quality)
+
         self._resize_views(self.size_slider.value())
 
         vbox.addStretch(1)
@@ -685,7 +715,7 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.prev_ang = None
         self.turns = 0.0
         self.rpm_vals.clear()
-        self._scope.calibrate()
+        self._scope.calibrate(duration=self.cal_time_spin.value())
         self._timer.start(self.DT_MS)
 
     def _disconnect(self) -> None:
@@ -698,7 +728,7 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
 
     # --------------------------------------------------------------- update ---
     def _update(self) -> None:
-        ang = self._scope.read()
+        s, c, ang = self._scope.read_waveforms()
 
         if self.prev_ang is None:
             rpm = 0.0
@@ -713,6 +743,9 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
             self.rpm_vals.append(rpm_inst)
             rpm = sum(self.rpm_vals) / len(self.rpm_vals)
         self.prev_ang = ang
+
+        amp = math.sqrt(s * s + c * c)
+        quality = max(0.0, min(100.0, (1 - abs(amp - 1.0)) * 100))
 
         deg = math.degrees(ang) % 360
         val = int(deg)
@@ -730,11 +763,12 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.lbl_angle.setText(f"Angle: {deg:.1f}°")
         self.lbl_speed.setText(f"Speed: {rpm:.1f} RPM")
         self.lbl_turns.setText(f"Turns: {self.turns:.2f}")
+        self.lbl_quality.setText(f"Quality: {quality:.0f}%")
 
     # ---------------------------------------------------------- extra actions ---
     def _run_calibration(self) -> None:
         if self.connected:
-            self._scope.calibrate()
+            self._scope.calibrate(duration=self.cal_time_spin.value())
 
     def _show_help(self) -> None:
         msg = (
