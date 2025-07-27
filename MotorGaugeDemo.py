@@ -33,6 +33,23 @@ except Exception:  # pragma: no cover - missing dependency
 import serial.tools.list_ports
 
 
+SENSOR_INFO_HTML = (
+    "<h3>Absolute Inductive Sensors</h3>"
+    "These sensors measure magnetic fields to know the exact angle "
+    "of a motor shaft. Because they are <b>absolute</b>, they keep "
+    "their position even after power is removed.<br><br>"
+    "<b>Where can you find them?</b><br>"
+    "&bull; Robot arms and drones<br>"
+    "&bull; Electric bikes and cars<br>"
+    "&bull; Industrial machines that need precise control<br><br>"
+    "<b>Why are they cool?</b><br>"
+    "&bull; Resistant to dust and vibrations<br>"
+    "&bull; Very accurate and quick<br>"
+    "&bull; Tiny coils printed right on a chip!<br><br>"
+    "Fun fact: they're like miniature metal detectors."
+)
+
+
 @dataclass
 class _DemoSource:
     """Fallback data source when pyX2Cscope isn't available."""
@@ -567,7 +584,18 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
     # ------------------------------------------------------------------ UI ---
     def _build_ui(self) -> None:
         central = QtWidgets.QWidget()
-        vbox = QtWidgets.QVBoxLayout(central)
+        main_hbox = QtWidgets.QHBoxLayout(central)
+
+        info_box = QtWidgets.QGroupBox("Sensor Info")
+        info_layout = QtWidgets.QVBoxLayout(info_box)
+        info_label = QtWidgets.QLabel(SENSOR_INFO_HTML)
+        info_label.setWordWrap(True)
+        info_label.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        info_layout.addWidget(info_label)
+
+        main_hbox.addWidget(info_box)
+
+        vbox = QtWidgets.QVBoxLayout()
 
         conn_box = QtWidgets.QGroupBox("Connection")
         gl = QtWidgets.QGridLayout(conn_box)
@@ -597,9 +625,6 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.help_btn.clicked.connect(self._show_help)
         gl.addWidget(self.help_btn, 3, 2)
 
-        self.info_btn = QtWidgets.QPushButton("Sensor Info")
-        self.info_btn.clicked.connect(self._show_sensor_info)
-        gl.addWidget(self.info_btn, 7, 0, 1, 3)
 
         gl.addWidget(QtWidgets.QLabel("Cal. time (s):"), 4, 0)
         self.cal_time_spin = QtWidgets.QDoubleSpinBox()
@@ -695,6 +720,7 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self._resize_views(self.size_slider.value())
 
         vbox.addStretch(1)
+        main_hbox.addLayout(vbox)
         self.setCentralWidget(central)
 
     def _apply_style(self) -> None:
@@ -825,23 +851,6 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         )
         QtWidgets.QMessageBox.information(self, "Calibration Help", msg)
 
-    def _show_sensor_info(self) -> None:
-        msg = (
-            "<h3>Absolute Inductive Sensors</h3>"
-            "These sensors measure magnetic fields to know the exact angle "
-            "of a motor shaft. Because they are <b>absolute</b>, they keep "
-            "their position even after power is removed.<br><br>"
-            "<b>Where can you find them?</b><br>"
-            "&bull; Robot arms and drones<br>"
-            "&bull; Electric bikes and cars<br>"
-            "&bull; Industrial machines that need precise control<br><br>"
-            "<b>Why are they cool?</b><br>"
-            "&bull; Resistant to dust and vibrations<br>"
-            "&bull; Very accurate and quick<br>"
-            "&bull; Tiny coils printed right on a chip!<br><br>"
-            "Fun fact: they're like miniature metal detectors."
-        )
-        QtWidgets.QMessageBox.information(self, "Sensor Info", msg)
 
     def _show_waveforms(self) -> None:
         if self.wave_win is None:
