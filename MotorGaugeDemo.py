@@ -47,6 +47,8 @@ class _DemoSource:
 class _ScopeWrapper:
     """Tiny wrapper around pyX2Cscope with demo fallback."""
 
+    SAMPLE_MS = 1  # scope sample interval
+
     def __init__(self) -> None:
         self.demo = X2CScope is None
         self.scope = None
@@ -60,6 +62,10 @@ class _ScopeWrapper:
         self.sin_cal = None
         self.cos_cal = None
         self.demo_src = _DemoSource()
+
+        # Scope capture state (updated when connected)
+        self._pending: list[tuple[float, float, float]] = []
+        self.last_sample: tuple[float, float, float] = (0.0, 0.0, 0.0)
 
     def connect(self, port: str, elf: str) -> None:
         if X2CScope is None:
@@ -77,6 +83,20 @@ class _ScopeWrapper:
         self.sin_cal = self.scope.get_variable("sin_calibrated")
         self.cos_cal = self.scope.get_variable("cos_calibrated")
         self.demo = False
+        self._pending.clear()
+        self.last_sample = (0.0, 0.0, 0.0)
+
+        # Configure scope channels for high-speed capture
+        if hasattr(self.scope, "clear_scope_channels"):
+            self.scope.clear_scope_channels()
+        elif hasattr(self.scope, "clear_all_scope_channel"):
+            self.scope.clear_all_scope_channel()
+        elif hasattr(self.scope, "clear_all_scope_channels"):
+            self.scope.clear_all_scope_channels()
+        for var in (self.sin_cal, self.cos_cal, self.ang):
+            self.scope.add_scope_channel(var)
+        self.scope.set_sample_time(self.SAMPLE_MS)
+        self.scope.request_scope_data()
 
     def disconnect(self) -> None:
         if self.scope is not None:
@@ -84,20 +104,47 @@ class _ScopeWrapper:
         self.scope = None
         self.demo = X2CScope is None
 
+    # ------------------------------------------------------------------ Scope helpers
+    def _fetch_scope(self) -> None:
+        """Grab new samples from the scope if ready."""
+        if self.demo:
+            ang = self.demo_src.read()
+            sample = (math.sin(ang), math.cos(ang), ang)
+            self._pending.append(sample)
+            self.last_sample = sample
+            return
+        if self.scope is None:
+            return
+        if getattr(self.scope, "is_scope_data_ready", lambda: False)():
+            data = self.scope.get_scope_channel_data(valid_data=False)
+            self.scope.request_scope_data()
+            if data:
+                s_vals = data.get("sin_calibrated", [])
+                c_vals = data.get("cos_calibrated", [])
+                a_vals = data.get("resolver_position", [])
+                for s, c, a in zip(s_vals, c_vals, a_vals):
+                    sample = (float(s), float(c), float(a))
+                    self._pending.append(sample)
+                    self.last_sample = sample
+
+    def get_samples(self) -> list[tuple[float, float, float]]:
+        self._fetch_scope()
+        if not self._pending:
+            return []
+        samples = self._pending[:]
+        self._pending.clear()
+        return samples
+
     def read(self) -> float:
         if self.demo or self.scope is None:
             return self.demo_src.read()
         return float(self.ang.get_value())  # type: ignore[call-arg]
 
     def read_waveforms(self) -> tuple[float, float, float]:
-        if self.demo or self.scope is None:
-            ang = self.demo_src.read()
-            return math.sin(ang), math.cos(ang), ang
-        return (
-            float(self.sin_cal.get_value()),  # type: ignore[call-arg]
-            float(self.cos_cal.get_value()),  # type: ignore[call-arg]
-            float(self.ang.get_value()),      # type: ignore[call-arg]
-        )
+        self._fetch_scope()
+        if self._pending:
+            self.last_sample = self._pending[-1]
+        return self.last_sample
 
     def calibrate(self, duration: float = 1.0, delay: float = 0.005) -> None:
         """Measure raw waveforms for ``duration`` seconds and update offsets.
@@ -475,39 +522,45 @@ class WaveformWindow(QtWidgets.QMainWindow):
         super().closeEvent(event)
 
     def _update(self) -> None:
-        s, c, ang = self.scope.read_waveforms()
+        samples = self.scope.get_samples()
+        if not samples:
+            samples = [self.scope.read_waveforms()]
 
-        trig_map = {"Sine": s, "Cosine": c, "Angle": ang}
-        trig_val = trig_map[self.trigger_combo.currentText()]
-        now_abs = time.perf_counter()
         win = self.win_spin.value()
+        ts = self.scope.SAMPLE_MS / 1000.0
+        base_time = time.perf_counter() - (len(samples) - 1) * ts
 
-        if (
-            self.trig_enable.isChecked()
-            and self.prev_trig_val < self.trigger_level <= trig_val
-        ):
-            self.t0_trigger = now_abs
-            self.data_t.clear()
-            self.data_s.clear()
-            self.data_c.clear()
-            self.data_a.clear()
-        elif not self.trig_enable.isChecked() and self.time_reset.isChecked():
-            if now_abs - self.t0_trigger >= win:
+        for idx, (s, c, ang) in enumerate(samples):
+            now_abs = base_time + idx * ts
+            trig_map = {"Sine": s, "Cosine": c, "Angle": ang}
+            trig_val = trig_map[self.trigger_combo.currentText()]
+
+            if (
+                self.trig_enable.isChecked()
+                and self.prev_trig_val < self.trigger_level <= trig_val
+            ):
                 self.t0_trigger = now_abs
                 self.data_t.clear()
                 self.data_s.clear()
                 self.data_c.clear()
                 self.data_a.clear()
+            elif not self.trig_enable.isChecked() and self.time_reset.isChecked():
+                if now_abs - self.t0_trigger >= win:
+                    self.t0_trigger = now_abs
+                    self.data_t.clear()
+                    self.data_s.clear()
+                    self.data_c.clear()
+                    self.data_a.clear()
 
-        self.prev_trig_val = trig_val
-        now = now_abs - self.t0_trigger
+            self.prev_trig_val = trig_val
+            now = now_abs - self.t0_trigger
 
-        self.data_t.append(now)
-        self.data_s.append(s)
-        self.data_c.append(c)
-        self.data_a.append(ang / math.pi)
+            self.data_t.append(now)
+            self.data_s.append(s)
+            self.data_c.append(c)
+            self.data_a.append(ang / math.pi)
 
-        while self.data_t and self.data_t[0] < now - win:
+        while self.data_t and self.data_t[0] < self.data_t[-1] - win:
             self.data_t.pop(0)
             self.data_s.pop(0)
             self.data_c.pop(0)
@@ -519,7 +572,7 @@ class WaveformWindow(QtWidgets.QMainWindow):
         if self.trig_enable.isChecked() or self.time_reset.isChecked():
             self.plot.setXRange(0, win)
         else:
-            self.plot.setXRange(max(0, now - win), now)
+            self.plot.setXRange(max(0, self.data_t[-1] - win), self.data_t[-1])
 
 class MotorGaugeDemo(QtWidgets.QMainWindow):
     DT_MS = 20
