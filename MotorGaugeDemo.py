@@ -147,7 +147,7 @@ class CompassWidget(QtWidgets.QWidget):
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         rect = self.rect()
         radius = min(rect.width(), rect.height()) / 2 - 10
-        center = rect.center()
+        center = QtCore.QPointF(rect.center())
         painter.drawEllipse(center, radius, radius)
         painter.save()
         painter.translate(center)
@@ -155,6 +155,63 @@ class CompassWidget(QtWidgets.QWidget):
         pen = QtGui.QPen(QtCore.Qt.GlobalColor.red, 3)
         painter.setPen(pen)
         painter.drawLine(0, 0, 0, -radius)
+        painter.restore()
+
+
+class MotorWidget(QtWidgets.QWidget):
+    """Simple motor representation with rotating shaft."""
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.angle = 0.0
+
+    def setAngle(self, ang: float) -> None:
+        self.angle = ang
+        self.update()
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401 - Qt override
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        rect = self.rect()
+        body = QtCore.QRectF(rect.center().x() - 30, rect.center().y() - 20, 60, 40)
+        painter.drawRect(body)
+        radius = min(rect.width(), rect.height()) / 2 - 10
+        center = QtCore.QPointF(rect.center())
+        painter.save()
+        painter.translate(center)
+        painter.rotate(-math.degrees(self.angle))
+        pen = QtGui.QPen(QtCore.Qt.GlobalColor.blue, 3)
+        painter.setPen(pen)
+        painter.drawLine(0, 0, 0, -radius)
+        painter.restore()
+
+
+class WheelWidget(QtWidgets.QWidget):
+    """Circular wheel with rotating spokes."""
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.angle = 0.0
+
+    def setAngle(self, ang: float) -> None:
+        self.angle = ang
+        self.update()
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401 - Qt override
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        rect = self.rect()
+        radius = min(rect.width(), rect.height()) / 2 - 10
+        center = QtCore.QPointF(rect.center())
+        painter.drawEllipse(center, radius, radius)
+        painter.save()
+        painter.translate(center)
+        painter.rotate(-math.degrees(self.angle))
+        pen = QtGui.QPen(QtCore.Qt.GlobalColor.darkGray, 2)
+        painter.setPen(pen)
+        for _ in range(4):
+            painter.drawLine(0, 0, 0, -radius)
+            painter.rotate(90)
         painter.restore()
 
 
@@ -236,7 +293,7 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.connected = False
 
         self.wave_win: WaveformWindow | None = None
-        self.modes = ["Dial", "Slider", "Bar", "LCD", "Compass"]
+        self.modes = ["Dial", "Slider", "Bar", "LCD", "Compass", "Motor", "Wheel"]
         self.rpm_vals = collections.deque(maxlen=20)
 
         self.t0 = time.perf_counter()
@@ -288,6 +345,7 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.mode_btn = QtWidgets.QPushButton("Change View")
         self.mode_btn.clicked.connect(self._next_mode)
         gl.addWidget(self.mode_btn, 5, 0, 1, 3)
+        self.mode_btn.setText(f"Mode: {self.modes[0]}")
         vbox.addWidget(conn_box)
 
         self.stack = QtWidgets.QStackedWidget()
@@ -319,6 +377,12 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
 
         self.compass = CompassWidget()
         self.stack.addWidget(self.compass)
+
+        self.motor_view = MotorWidget()
+        self.stack.addWidget(self.motor_view)
+
+        self.wheel_view = WheelWidget()
+        self.stack.addWidget(self.wheel_view)
 
         self.lbl_angle = QtWidgets.QLabel("Angle: —")
         font = self.lbl_angle.font()
@@ -432,6 +496,8 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.bar.setValue(val)
         self.lcd.display(f"{deg:6.1f}")
         self.compass.setAngle(ang)
+        self.motor_view.setAngle(ang)
+        self.wheel_view.setAngle(ang)
         self.lbl_angle.setText(f"Angle: {deg:.1f}°")
         self.lbl_speed.setText(f"Speed: {rpm:.1f} RPM")
         self.lbl_turns.setText(f"Turns: {self.turns:.2f}")
