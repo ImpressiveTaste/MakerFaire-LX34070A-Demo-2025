@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Fun motor gauge demo designed for kids at Maker Faire 2025.
+"""Standalone motor gauge demo for kids at Maker Faire 2025.
 
-This application presents the motor angle on a colourful dial and star
-indicator.  It reuses the data connection from :mod:`MotorGaugeDemo`
-so it works with real hardware or in demo mode.  A banner displays the
-slogan "Absolute inductive sensors – magnet free encoder solution".
+This playful application shows the motor angle on a colourful dial and
+a spinning star.  Everything is self‑contained here so it can run on its
+own.  A banner proudly displays the motto
+"Absolute inductive sensors – magnet free encoder solution".
 """
 
 from __future__ import annotations
@@ -15,9 +15,100 @@ import time
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 import serial.tools.list_ports
+from dataclasses import dataclass
 
-# Reuse the scope wrapper from the regular gauge demo
-from MotorGaugeDemo import _ScopeWrapper, StarWidget
+try:
+    from pyx2cscope.x2cscope import X2CScope  # type: ignore
+except Exception:  # pragma: no cover - missing dependency
+    X2CScope = None
+
+
+@dataclass
+class _DemoSource:
+    """Fallback data source when pyX2Cscope isn't available."""
+
+    freq: float = 1.0  # Hz
+
+    def __post_init__(self) -> None:
+        self.t_last = time.perf_counter()
+        self.angle = 0.0
+
+    def read(self) -> float:
+        now = time.perf_counter()
+        dt = now - self.t_last
+        self.t_last = now
+        self.angle += 2 * math.pi * self.freq * dt
+        return ((self.angle + math.pi) % (2 * math.pi)) - math.pi
+
+
+class _ScopeWrapper:
+    """Tiny wrapper around pyX2Cscope with demo fallback."""
+
+    def __init__(self) -> None:
+        self.demo = X2CScope is None
+        self.scope = None
+        self.ang = None
+        self.demo_src = _DemoSource()
+
+    def connect(self, port: str, elf: str) -> None:
+        if X2CScope is None:
+            self.demo = True
+            return
+        self.scope = X2CScope(port=port)
+        self.scope.import_variables(elf)
+        self.ang = self.scope.get_variable("resolver_position")
+        self.demo = False
+
+    def disconnect(self) -> None:
+        if self.scope is not None:
+            self.scope.disconnect()
+        self.scope = None
+        self.demo = X2CScope is None
+
+    def read(self) -> float:
+        if self.demo or self.scope is None:
+            return self.demo_src.read()
+        return float(self.ang.get_value())  # type: ignore[call-arg]
+
+
+class StarWidget(QtWidgets.QWidget):
+    """Five-pointed star rotating with the angle."""
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.angle = 0.0
+
+    def setAngle(self, ang: float) -> None:
+        self.angle = ang
+        self.update()
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401 - Qt override
+        painter = QtGui.QPainter(self)
+        try:
+            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            rect = self.rect()
+            radius = min(rect.width(), rect.height()) / 2 - 10
+            center = QtCore.QPointF(rect.center())
+            painter.save()
+            painter.translate(center)
+            painter.rotate(-math.degrees(self.angle))
+            path = QtGui.QPainterPath()
+            for i in range(5):
+                ang = math.radians(72 * i - 90)
+                x = radius * math.cos(ang)
+                y = radius * math.sin(ang)
+                if i == 0:
+                    path.moveTo(x, y)
+                else:
+                    path.lineTo(x, y)
+            path.closeSubpath()
+            painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.darkYellow, 2))
+            painter.setBrush(QtGui.QBrush(QtCore.Qt.GlobalColor.yellow))
+            painter.drawPath(path)
+            painter.restore()
+        finally:
+            painter.end()
+
 
 
 class KidMotorGauge(QtWidgets.QMainWindow):
@@ -60,6 +151,13 @@ class KidMotorGauge(QtWidgets.QMainWindow):
         tagline.setAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter)
         vbox.addWidget(tagline)
 
+        info = QtWidgets.QLabel("Turn the dial to spin the star!")
+        info.setAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter)
+        f = info.font()
+        f.setPointSize(12)
+        info.setFont(f)
+        vbox.addWidget(info)
+
         conn_box = QtWidgets.QGroupBox("Connection")
         gl = QtWidgets.QGridLayout(conn_box)
         gl.addWidget(QtWidgets.QLabel("ELF file:"), 0, 0)
@@ -83,7 +181,7 @@ class KidMotorGauge(QtWidgets.QMainWindow):
         vbox.addWidget(conn_box)
 
         self.star = StarWidget()
-        self.star.setFixedSize(200, 200)
+        self.star.setFixedSize(250, 250)
         vbox.addWidget(self.star, alignment=QtCore.Qt.AlignmentFlag.AlignHCenter)
 
         self.dial = QtWidgets.QDial()
