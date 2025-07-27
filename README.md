@@ -30,6 +30,7 @@ This repository showcases several demos built around the LX34070A inductive sens
 - [pyX2Cscope](https://pypi.org/project/pyx2cscope/)
 - Optional packages: `pyqtgraph`, `PyQt6`, `matplotlib`, `pandas` and `scipy`
 - A Microchip board with the LX34070A sensor (for hardware mode)
+- A dsPIC33CK64MC105 Curiosity nano board
 
 ## Setup
 
