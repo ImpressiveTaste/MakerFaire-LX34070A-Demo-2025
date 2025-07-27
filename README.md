@@ -6,6 +6,8 @@ This repository showcases several demos built around the LX34070A inductive sens
 
 ![GUI Demo](GUIMotorGaugeDemo.png)
 
+![dsPIC33CK with Hardware Connection to LX34070A](realhardware.jpg)
+
 ## Included Demos
 
 - **`MotorGaugeDemo.py`** – PyQt6 application displaying the motor angle on multiple widgets. It can also plot sine and cosine waveforms and includes a calibration routine.
