@@ -49,6 +49,12 @@ class _ScopeWrapper:
         self.demo = X2CScope is None
         self.scope = None
         self.ang = None
+        self.sin_raw = None
+        self.cos_raw = None
+        self.sin_off = None
+        self.cos_off = None
+        self.sin_amp = None
+        self.cos_amp = None
         self.demo_src = _DemoSource()
 
     def connect(self, port: str, elf: str) -> None:
@@ -58,6 +64,12 @@ class _ScopeWrapper:
         self.scope = X2CScope(port=port)
         self.scope.import_variables(elf)
         self.ang = self.scope.get_variable("resolver_position")
+        self.sin_raw = self.scope.get_variable("sin_raw")
+        self.cos_raw = self.scope.get_variable("cos_raw")
+        self.sin_off = self.scope.get_variable("sin_offset")
+        self.cos_off = self.scope.get_variable("cos_offset")
+        self.sin_amp = self.scope.get_variable("sin_amplitude")
+        self.cos_amp = self.scope.get_variable("cos_amplitude")
         self.demo = False
 
     def disconnect(self) -> None:
@@ -70,6 +82,31 @@ class _ScopeWrapper:
         if self.demo or self.scope is None:
             return self.demo_src.read()
         return float(self.ang.get_value())  # type: ignore[call-arg]
+
+    def calibrate(self, samples: int = 200, delay: float = 0.005) -> None:
+        """Auto-calibrate offsets and amplitudes using raw sin/cos values."""
+        if self.demo or self.scope is None:
+            return
+        min_s = float("inf")
+        max_s = float("-inf")
+        min_c = float("inf")
+        max_c = float("-inf")
+        for _ in range(samples):
+            s = float(self.sin_raw.get_value())  # type: ignore[call-arg]
+            c = float(self.cos_raw.get_value())  # type: ignore[call-arg]
+            min_s = min(min_s, s)
+            max_s = max(max_s, s)
+            min_c = min(min_c, c)
+            max_c = max(max_c, c)
+            time.sleep(delay)
+        off_s = (max_s + min_s) / 2.0
+        off_c = (max_c + min_c) / 2.0
+        amp_s = 2.0 / (max_s - min_s) if max_s != min_s else 1.0
+        amp_c = 2.0 / (max_c - min_c) if max_c != min_c else 1.0
+        self.sin_off.set_value(off_s)
+        self.cos_off.set_value(off_c)
+        self.sin_amp.set_value(amp_s)
+        self.cos_amp.set_value(amp_c)
 
 
 class MotorGaugeDemo(QtWidgets.QMainWindow):
@@ -87,6 +124,7 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.turns = 0.0
 
         self._build_ui()
+        self._apply_style()
         self._timer = QtCore.QTimer(self)
         self._timer.timeout.connect(self._update)
 
@@ -115,6 +153,12 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.conn_btn = QtWidgets.QPushButton("Connect")
         self.conn_btn.clicked.connect(self._toggle_conn)
         gl.addWidget(self.conn_btn, 2, 0, 1, 3)
+        self.cal_btn = QtWidgets.QPushButton("Calibrate")
+        self.cal_btn.clicked.connect(self._run_calibration)
+        gl.addWidget(self.cal_btn, 3, 0, 1, 3)
+        self.wave_btn = QtWidgets.QPushButton("Show Waveforms")
+        self.wave_btn.clicked.connect(self._show_waveforms)
+        gl.addWidget(self.wave_btn, 4, 0, 1, 3)
         vbox.addWidget(conn_box)
 
         self.dial = QtWidgets.QDial()
@@ -122,7 +166,11 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.dial.setNotchesVisible(True)
         self.dial.setRange(0, 359)
         self.dial.setEnabled(False)
-        self.dial.setFixedSize(200, 200)
+        self.dial.setMinimumSize(200, 200)
+        self.dial.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Expanding,
+        )
         vbox.addWidget(self.dial, alignment=QtCore.Qt.AlignmentFlag.AlignHCenter)
 
         self.lbl_angle = QtWidgets.QLabel("Angle: —")
@@ -143,6 +191,20 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
 
         vbox.addStretch(1)
         self.setCentralWidget(central)
+
+    def _apply_style(self) -> None:
+        neon = "#39FF14"
+        accent = "#ff00ff"
+        self.setStyleSheet(
+            f"""
+            QWidget {{ background-color: #0d0d0d; color: {neon}; font-family: Courier; }}
+            QGroupBox {{ border: 1px solid {accent}; margin-top: 6px; }}
+            QGroupBox::title {{ subcontrol-origin: margin; left: 10px; color: {accent}; }}
+            QPushButton {{ background-color: {accent}; color: black; border-radius: 4px; padding: 4px; }}
+            QPushButton:hover {{ background-color: #ff66ff; }}
+            QDial {{ background-color: #1a1a1a; }}
+            """
+        )
 
     # ------------------------------------------------------------- utilities --
     @staticmethod
@@ -183,6 +245,7 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.t0 = time.perf_counter()
         self.prev_ang = None
         self.turns = 0.0
+        self._scope.calibrate()
         self._timer.start(self.DT_MS)
 
     def _disconnect(self) -> None:
@@ -212,6 +275,15 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.lbl_angle.setText(f"Angle: {deg:.1f}°")
         self.lbl_speed.setText(f"Speed: {rpm:.1f} RPM")
         self.lbl_turns.setText(f"Turns: {self.turns:.2f}")
+
+    # ---------------------------------------------------------- extra actions ---
+    def _run_calibration(self) -> None:
+        if self.connected:
+            self._scope.calibrate()
+
+    def _show_waveforms(self) -> None:
+        import subprocess, sys
+        subprocess.Popen([sys.executable, "InductiveSensorDemo.py"])
 
 
 def main() -> None:
