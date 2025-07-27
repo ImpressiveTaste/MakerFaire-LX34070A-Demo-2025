@@ -5,6 +5,13 @@ This tiny application shows the motor angle on a dial gauge.  The data
 source is shared with :mod:`InductiveSensorDemo`, so it works either with
 a real target via ``pyX2Cscope`` or in demo mode if that package is not
 available.
+
+**About absolute inductive sensors**
+    These clever sensors detect magnetic fields to determine rotation. Unlike
+    incremental types, they always know the absolute position of the shaft so
+    the angle is remembered even after power is lost. They are found in robots,
+    electric bikes, car steering systems and more. They're rugged and precise,
+    making them great for makers of all ages.
 """
 
 from __future__ import annotations
@@ -526,7 +533,7 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Motor Position Gauge")
+        self.setWindowTitle("MakerFaire 2025 Motor Position Gauge")
 
         self._scope = _ScopeWrapper()
         self.connected = False
@@ -589,6 +596,10 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.help_btn = QtWidgets.QPushButton("?")
         self.help_btn.clicked.connect(self._show_help)
         gl.addWidget(self.help_btn, 3, 2)
+
+        self.info_btn = QtWidgets.QPushButton("Sensor Info")
+        self.info_btn.clicked.connect(self._show_sensor_info)
+        gl.addWidget(self.info_btn, 7, 0, 1, 3)
 
         gl.addWidget(QtWidgets.QLabel("Cal. time (s):"), 4, 0)
         self.cal_time_spin = QtWidgets.QDoubleSpinBox()
@@ -813,6 +824,24 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
             "Extreme noise or clipping may cause inaccurate results."
         )
         QtWidgets.QMessageBox.information(self, "Calibration Help", msg)
+
+    def _show_sensor_info(self) -> None:
+        msg = (
+            "<h3>Absolute Inductive Sensors</h3>"
+            "These sensors measure magnetic fields to know the exact angle "
+            "of a motor shaft. Because they are <b>absolute</b>, they keep "
+            "their position even after power is removed.<br><br>"
+            "<b>Where can you find them?</b><br>"
+            "&bull; Robot arms and drones<br>"
+            "&bull; Electric bikes and cars<br>"
+            "&bull; Industrial machines that need precise control<br><br>"
+            "<b>Why are they cool?</b><br>"
+            "&bull; Resistant to dust and vibrations<br>"
+            "&bull; Very accurate and quick<br>"
+            "&bull; Tiny coils printed right on a chip!<br><br>"
+            "Fun fact: they're like miniature metal detectors."
+        )
+        QtWidgets.QMessageBox.information(self, "Sensor Info", msg)
 
     def _show_waveforms(self) -> None:
         if self.wave_win is None:
