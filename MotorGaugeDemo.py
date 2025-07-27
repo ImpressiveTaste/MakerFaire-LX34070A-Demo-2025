@@ -528,33 +528,6 @@ class WaveformWindow(QtWidgets.QMainWindow):
         else:
             self.plot.setXRange(max(0, now - win), now)
 
-
-class SensorInfoWindow(QtWidgets.QWidget):
-    """Non-modal window displaying sensor information."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.setWindowTitle("Sensor Info")
-        layout = QtWidgets.QVBoxLayout(self)
-        msg = (
-            "<h3>Absolute Inductive Sensors</h3>"
-            "These sensors measure magnetic fields to know the exact angle "
-            "of a motor shaft. Because they are <b>absolute</b>, they keep "
-            "their position even after power is removed.<br><br>"
-            "<b>Where can you find them?</b><br>"
-            "&bull; Robot arms and drones<br>"
-            "&bull; Electric bikes and cars<br>"
-            "&bull; Industrial machines that need precise control<br><br>"
-            "<b>Why are they cool?</b><br>"
-            "&bull; Resistant to dust and vibrations<br>"
-            "&bull; Very accurate and quick<br>"
-            "&bull; Tiny coils printed right on a chip!<br><br>"
-            "Fun fact: they're like miniature metal detectors."
-        )
-        label = QtWidgets.QLabel(msg)
-        label.setWordWrap(True)
-        layout.addWidget(label)
-
 class MotorGaugeDemo(QtWidgets.QMainWindow):
     DT_MS = 20
 
@@ -566,7 +539,6 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.connected = False
 
         self.wave_win: WaveformWindow | None = None
-        self.info_win: QtWidgets.QWidget | None = None
         self.modes = [
             "Dial",
             "Slider",
@@ -854,10 +826,22 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         QtWidgets.QMessageBox.information(self, "Calibration Help", msg)
 
     def _show_sensor_info(self) -> None:
-        if self.info_win is None:
-            self.info_win = SensorInfoWindow()
-        self.info_win.show()
-        self.info_win.raise_()
+        msg = (
+            "<h3>Absolute Inductive Sensors</h3>"
+            "These sensors measure magnetic fields to know the exact angle "
+            "of a motor shaft. Because they are <b>absolute</b>, they keep "
+            "their position even after power is removed.<br><br>"
+            "<b>Where can you find them?</b><br>"
+            "&bull; Robot arms and drones<br>"
+            "&bull; Electric bikes and cars<br>"
+            "&bull; Industrial machines that need precise control<br><br>"
+            "<b>Why are they cool?</b><br>"
+            "&bull; Resistant to dust and vibrations<br>"
+            "&bull; Very accurate and quick<br>"
+            "&bull; Tiny coils printed right on a chip!<br><br>"
+            "Fun fact: they're like miniature metal detectors."
+        )
+        QtWidgets.QMessageBox.information(self, "Sensor Info", msg)
 
     def _show_waveforms(self) -> None:
         if self.wave_win is None:
