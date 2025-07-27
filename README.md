@@ -2,7 +2,7 @@
 
 **Last updated:** July 27, 2025
 
-This repository showcases several demos built around the LX34070A inductive sensor. A cheap dsPIC33CK64MC105 Curiosity Nano Board was used to read the seignal from the inductive sensor. Python GUIs connect to the dsPIC through [pyX2Cscope](https://github.com/X2Cscope/pyx2cscope) when available, but all programs also have a demo mode that simulates data so they can run standalone.
+This repository showcases several demos built around the LX34070A inductive sensor. A cheap dsPIC33CK64MC105 Curiosity Nano Board was used to read the signal from the inductive sensor. Python GUIs connect to the dsPIC through [pyX2Cscope](https://github.com/X2Cscope/pyx2cscope) when available, but all programs also have a demo mode that simulates data so they can run standalone.
 
 ![GUI Demo](GUIMotorGaugeDemo.png)
 
