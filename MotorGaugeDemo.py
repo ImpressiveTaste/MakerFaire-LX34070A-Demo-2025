@@ -224,6 +224,103 @@ class WheelWidget(QtWidgets.QWidget):
             painter.end()
 
 
+class TriangleWidget(QtWidgets.QWidget):
+    """Rotating triangle indicator."""
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.angle = 0.0
+
+    def setAngle(self, ang: float) -> None:
+        self.angle = ang
+        self.update()
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401 - Qt override
+        painter = QtGui.QPainter(self)
+        try:
+            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            rect = self.rect()
+            radius = min(rect.width(), rect.height()) / 2 - 10
+            center = QtCore.QPointF(rect.center())
+            painter.save()
+            painter.translate(center)
+            painter.rotate(-math.degrees(self.angle))
+            path = QtGui.QPainterPath()
+            path.moveTo(0, -radius)
+            path.lineTo(radius * 0.6, radius * 0.6)
+            path.lineTo(-radius * 0.6, radius * 0.6)
+            path.closeSubpath()
+            painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.darkGreen, 2))
+            painter.setBrush(QtGui.QBrush(QtCore.Qt.GlobalColor.green))
+            painter.drawPath(path)
+            painter.restore()
+        finally:
+            painter.end()
+
+
+class ArrowWidget(QtWidgets.QWidget):
+    """Arrow shaped pointer."""
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.angle = 0.0
+
+    def setAngle(self, ang: float) -> None:
+        self.angle = ang
+        self.update()
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401 - Qt override
+        painter = QtGui.QPainter(self)
+        try:
+            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            rect = self.rect()
+            radius = min(rect.width(), rect.height()) / 2 - 10
+            center = QtCore.QPointF(rect.center())
+            painter.save()
+            painter.translate(center)
+            painter.rotate(-math.degrees(self.angle))
+            path = QtGui.QPainterPath()
+            path.moveTo(0, -radius)
+            path.lineTo(radius * 0.3, 0)
+            path.lineTo(0, radius * 0.3)
+            path.lineTo(-radius * 0.3, 0)
+            path.closeSubpath()
+            painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.darkRed, 2))
+            painter.setBrush(QtGui.QBrush(QtCore.Qt.GlobalColor.red))
+            painter.drawPath(path)
+            painter.restore()
+        finally:
+            painter.end()
+
+
+class DotWidget(QtWidgets.QWidget):
+    """Dot moving around a circle."""
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.angle = 0.0
+
+    def setAngle(self, ang: float) -> None:
+        self.angle = ang
+        self.update()
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401 - Qt override
+        painter = QtGui.QPainter(self)
+        try:
+            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            rect = self.rect()
+            radius = min(rect.width(), rect.height()) / 2 - 10
+            center = QtCore.QPointF(rect.center())
+            painter.drawEllipse(center, radius, radius)
+            dot = QtCore.QPointF(
+                center.x() + radius * math.sin(self.angle),
+                center.y() - radius * math.cos(self.angle),
+            )
+            painter.setBrush(QtGui.QBrush(QtCore.Qt.GlobalColor.blue))
+            painter.drawEllipse(dot, 6, 6)
+        finally:
+            painter.end()
+
 class WaveformWindow(QtWidgets.QMainWindow):
     """Window showing sine/cosine waveforms using pyqtgraph."""
 
@@ -248,7 +345,7 @@ class WaveformWindow(QtWidgets.QMainWindow):
         ctrl = QtWidgets.QHBoxLayout()
         ctrl.addWidget(QtWidgets.QLabel("Time window:"))
         self.win_spin = QtWidgets.QDoubleSpinBox()
-        self.win_spin.setRange(0.1, 10.0)
+        self.win_spin.setRange(0.1, 100.0)
         self.win_spin.setSingleStep(0.1)
         self.win_spin.setValue(1.0)
         ctrl.addWidget(self.win_spin)
@@ -339,7 +436,18 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.connected = False
 
         self.wave_win: WaveformWindow | None = None
-        self.modes = ["Dial", "Slider", "Bar", "LCD", "Compass", "Motor", "Wheel"]
+        self.modes = [
+            "Dial",
+            "Slider",
+            "Bar",
+            "LCD",
+            "Compass",
+            "Motor",
+            "Wheel",
+            "Triangle",
+            "Arrow",
+            "Dot",
+        ]
         self.rpm_vals = collections.deque(maxlen=20)
 
         self.t0 = time.perf_counter()
@@ -430,6 +538,21 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.wheel_view = WheelWidget()
         self.stack.addWidget(self.wheel_view)
 
+        self.triangle_view = TriangleWidget()
+        self.stack.addWidget(self.triangle_view)
+
+        self.arrow_view = ArrowWidget()
+        self.stack.addWidget(self.arrow_view)
+
+        self.dot_view = DotWidget()
+        self.stack.addWidget(self.dot_view)
+
+        self.size_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.size_slider.setRange(100, 400)
+        self.size_slider.setValue(200)
+        self.size_slider.valueChanged.connect(self._resize_views)
+        vbox.addWidget(self.size_slider)
+
         self.lbl_angle = QtWidgets.QLabel("Angle: —")
         font = self.lbl_angle.font()
         font.setPointSize(14)
@@ -445,6 +568,8 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.lbl_turns = QtWidgets.QLabel("Turns: —")
         self.lbl_turns.setAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter)
         vbox.addWidget(self.lbl_turns)
+
+        self._resize_views(self.size_slider.value())
 
         vbox.addStretch(1)
         self.setCentralWidget(central)
@@ -481,6 +606,11 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         )
         if fn:
             self.elf_edit.setText(fn)
+
+    def _resize_views(self, val: int) -> None:
+        for i in range(self.stack.count()):
+            self.stack.widget(i).setFixedSize(val, val)
+        self.stack.setFixedSize(val, val)
 
     # -------------------------------------------------------------- connect ---
     def _toggle_conn(self) -> None:
@@ -544,6 +674,9 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.compass.setAngle(ang)
         self.motor_view.setAngle(ang)
         self.wheel_view.setAngle(ang)
+        self.triangle_view.setAngle(ang)
+        self.arrow_view.setAngle(ang)
+        self.dot_view.setAngle(ang)
         self.lbl_angle.setText(f"Angle: {deg:.1f}°")
         self.lbl_speed.setText(f"Speed: {rpm:.1f} RPM")
         self.lbl_turns.setText(f"Turns: {self.turns:.2f}")
