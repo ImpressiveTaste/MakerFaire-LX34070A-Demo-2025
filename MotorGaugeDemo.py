@@ -84,7 +84,13 @@ class _ScopeWrapper:
         return float(self.ang.get_value())  # type: ignore[call-arg]
 
     def calibrate(self, samples: int = 200, delay: float = 0.005) -> None:
-        """Auto-calibrate offsets and amplitudes using raw sin/cos values."""
+        """Measure raw waveforms and update offset/amplitude registers.
+
+        The resolver generates sine and cosine signals that may be shifted
+        or scaled.  ``calibrate`` samples the raw values for ``samples``
+        iterations, finds their min/max, then computes offset and amplitude
+        correction factors which are written back to the target via X2CScope.
+        """
         if self.demo or self.scope is None:
             return
         min_s = float("inf")
@@ -166,12 +172,13 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.dial.setNotchesVisible(True)
         self.dial.setRange(0, 359)
         self.dial.setEnabled(False)
-        self.dial.setMinimumSize(200, 200)
+        self.dial.setMinimumSize(150, 150)
         self.dial.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding,
             QtWidgets.QSizePolicy.Policy.Expanding,
         )
-        vbox.addWidget(self.dial, alignment=QtCore.Qt.AlignmentFlag.AlignHCenter)
+        # Let the layout control its geometry so it scales with the window
+        vbox.addWidget(self.dial)
 
         self.lbl_angle = QtWidgets.QLabel("Angle: —")
         font = self.lbl_angle.font()
@@ -193,16 +200,19 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.setCentralWidget(central)
 
     def _apply_style(self) -> None:
-        neon = "#39FF14"
-        accent = "#ff00ff"
+        # Maker Faire inspired colour scheme
+        base = "#ffffff"
+        accent_red = "#E2231A"  # Maker Faire red
+        accent_blue = "#0098DB"  # Maker Faire blue
+        text = "#000000"
         self.setStyleSheet(
             f"""
-            QWidget {{ background-color: #0d0d0d; color: {neon}; font-family: Courier; }}
-            QGroupBox {{ border: 1px solid {accent}; margin-top: 6px; }}
-            QGroupBox::title {{ subcontrol-origin: margin; left: 10px; color: {accent}; }}
-            QPushButton {{ background-color: {accent}; color: black; border-radius: 4px; padding: 4px; }}
-            QPushButton:hover {{ background-color: #ff66ff; }}
-            QDial {{ background-color: #1a1a1a; }}
+            QWidget {{ background-color: {base}; color: {text}; font-family: Arial; }}
+            QGroupBox {{ border: 1px solid {accent_blue}; margin-top: 6px; }}
+            QGroupBox::title {{ subcontrol-origin: margin; left: 10px; color: {accent_blue}; }}
+            QPushButton {{ background-color: {accent_red}; color: white; border-radius: 4px; padding: 4px; }}
+            QPushButton:hover {{ background-color: {accent_blue}; }}
+            QDial {{ background-color: {base}; border: 2px solid {accent_blue}; }}
             """
         )
 
@@ -282,8 +292,9 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
             self._scope.calibrate()
 
     def _show_waveforms(self) -> None:
-        import subprocess, sys
-        subprocess.Popen([sys.executable, "InductiveSensorDemo.py"])
+        import subprocess, sys, os
+        script = os.path.join(os.path.dirname(__file__), "InductiveSensorDemo.py")
+        subprocess.Popen([sys.executable, script])
 
 
 def main() -> None:
