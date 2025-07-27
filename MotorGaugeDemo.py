@@ -15,6 +15,8 @@ import time
 from dataclasses import dataclass
 
 from PyQt6 import QtCore, QtGui, QtWidgets
+import pyqtgraph as pg
+import collections
 
 try:
     from pyx2cscope.x2cscope import X2CScope  # type: ignore
@@ -55,6 +57,8 @@ class _ScopeWrapper:
         self.cos_off = None
         self.sin_amp = None
         self.cos_amp = None
+        self.sin_cal = None
+        self.cos_cal = None
         self.demo_src = _DemoSource()
 
     def connect(self, port: str, elf: str) -> None:
@@ -70,6 +74,8 @@ class _ScopeWrapper:
         self.cos_off = self.scope.get_variable("cos_offset")
         self.sin_amp = self.scope.get_variable("sin_amplitude")
         self.cos_amp = self.scope.get_variable("cos_amplitude")
+        self.sin_cal = self.scope.get_variable("sin_calibrated")
+        self.cos_cal = self.scope.get_variable("cos_calibrated")
         self.demo = False
 
     def disconnect(self) -> None:
@@ -82,6 +88,16 @@ class _ScopeWrapper:
         if self.demo or self.scope is None:
             return self.demo_src.read()
         return float(self.ang.get_value())  # type: ignore[call-arg]
+
+    def read_waveforms(self) -> tuple[float, float, float]:
+        if self.demo or self.scope is None:
+            ang = self.demo_src.read()
+            return math.sin(ang), math.cos(ang), ang
+        return (
+            float(self.sin_cal.get_value()),  # type: ignore[call-arg]
+            float(self.cos_cal.get_value()),  # type: ignore[call-arg]
+            float(self.ang.get_value()),      # type: ignore[call-arg]
+        )
 
     def calibrate(self, samples: int = 200, delay: float = 0.005) -> None:
         """Measure raw waveforms and update offset/amplitude registers.
@@ -115,6 +131,100 @@ class _ScopeWrapper:
         self.cos_amp.set_value(amp_c)
 
 
+class CompassWidget(QtWidgets.QWidget):
+    """Simple compass-like widget with a rotating needle."""
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.angle = 0.0
+
+    def setAngle(self, ang: float) -> None:
+        self.angle = ang
+        self.update()
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401 - Qt override
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        rect = self.rect()
+        radius = min(rect.width(), rect.height()) / 2 - 10
+        center = rect.center()
+        painter.drawEllipse(center, radius, radius)
+        painter.save()
+        painter.translate(center)
+        painter.rotate(-math.degrees(self.angle))
+        pen = QtGui.QPen(QtCore.Qt.GlobalColor.red, 3)
+        painter.setPen(pen)
+        painter.drawLine(0, 0, 0, -radius)
+        painter.restore()
+
+
+class WaveformWindow(QtWidgets.QMainWindow):
+    """Window showing sine/cosine waveforms using pyqtgraph."""
+
+    DT_MS = 20
+
+    def __init__(self, scope: _ScopeWrapper) -> None:
+        super().__init__()
+        self.setWindowTitle("Resolver Waveforms")
+        pg.setConfigOptions(antialias=True)
+        self.scope = scope
+        self.t0 = time.perf_counter()
+
+        central = QtWidgets.QWidget()
+        vbox = QtWidgets.QVBoxLayout(central)
+        self.plot = pg.PlotWidget(background="w")
+        self.plot.addLegend()
+        self.plot.showGrid(x=True, y=True, alpha=0.2)
+        self.plot.setLabel("bottom", "Time", units="s")
+        self.plot.setLabel("left", "Value")
+        vbox.addWidget(self.plot)
+        self.setCentralWidget(central)
+
+        pen_s = pg.mkPen("b", width=1.5)
+        pen_c = pg.mkPen("g", width=1.5)
+        pen_a = pg.mkPen("m", width=1.5)
+        self.curve_s = self.plot.plot(pen=pen_s, name="Sine")
+        self.curve_c = self.plot.plot(pen=pen_c, name="Cosine")
+        self.curve_a = self.plot.plot(pen=pen_a, name="Angle/π")
+
+        self.data_t: list[float] = []
+        self.data_s: list[float] = []
+        self.data_c: list[float] = []
+        self.data_a: list[float] = []
+
+        self.timer = QtCore.QTimer(self)
+        self.timer.timeout.connect(self._update)
+
+    def showEvent(self, event: QtGui.QShowEvent) -> None:  # noqa: D401
+        self.t0 = time.perf_counter()
+        self.data_t.clear()
+        self.data_s.clear()
+        self.data_c.clear()
+        self.data_a.clear()
+        self.timer.start(self.DT_MS)
+        super().showEvent(event)
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # noqa: D401
+        self.timer.stop()
+        super().closeEvent(event)
+
+    def _update(self) -> None:
+        s, c, ang = self.scope.read_waveforms()
+        now = time.perf_counter() - self.t0
+        self.data_t.append(now)
+        self.data_s.append(s)
+        self.data_c.append(c)
+        self.data_a.append(ang / math.pi)
+        if len(self.data_t) > 1000:
+            self.data_t.pop(0)
+            self.data_s.pop(0)
+            self.data_c.pop(0)
+            self.data_a.pop(0)
+        self.curve_s.setData(self.data_t, self.data_s)
+        self.curve_c.setData(self.data_t, self.data_c)
+        self.curve_a.setData(self.data_t, self.data_a)
+        self.plot.setXRange(max(0, now - 5), now)
+
 class MotorGaugeDemo(QtWidgets.QMainWindow):
     DT_MS = 20
 
@@ -124,6 +234,10 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
 
         self._scope = _ScopeWrapper()
         self.connected = False
+
+        self.wave_win: WaveformWindow | None = None
+        self.modes = ["Dial", "Slider", "Bar", "LCD", "Compass"]
+        self.rpm_vals = collections.deque(maxlen=20)
 
         self.t0 = time.perf_counter()
         self.prev_ang: float | None = None
@@ -159,26 +273,52 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.conn_btn = QtWidgets.QPushButton("Connect")
         self.conn_btn.clicked.connect(self._toggle_conn)
         gl.addWidget(self.conn_btn, 2, 0, 1, 3)
+
         self.cal_btn = QtWidgets.QPushButton("Calibrate")
         self.cal_btn.clicked.connect(self._run_calibration)
-        gl.addWidget(self.cal_btn, 3, 0, 1, 3)
+        gl.addWidget(self.cal_btn, 3, 0, 1, 2)
+        self.help_btn = QtWidgets.QPushButton("?")
+        self.help_btn.clicked.connect(self._show_help)
+        gl.addWidget(self.help_btn, 3, 2)
+
         self.wave_btn = QtWidgets.QPushButton("Show Waveforms")
         self.wave_btn.clicked.connect(self._show_waveforms)
         gl.addWidget(self.wave_btn, 4, 0, 1, 3)
+
+        self.mode_btn = QtWidgets.QPushButton("Change View")
+        self.mode_btn.clicked.connect(self._next_mode)
+        gl.addWidget(self.mode_btn, 5, 0, 1, 3)
         vbox.addWidget(conn_box)
+
+        self.stack = QtWidgets.QStackedWidget()
+        self.stack.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Expanding,
+        )
+        vbox.addWidget(self.stack)
 
         self.dial = QtWidgets.QDial()
         self.dial.setWrapping(True)
         self.dial.setNotchesVisible(True)
         self.dial.setRange(0, 359)
         self.dial.setEnabled(False)
-        self.dial.setMinimumSize(150, 150)
-        self.dial.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Expanding,
-            QtWidgets.QSizePolicy.Policy.Expanding,
-        )
-        # Let the layout control its geometry so it scales with the window
-        vbox.addWidget(self.dial)
+        self.stack.addWidget(self.dial)
+
+        self.slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.slider.setRange(0, 359)
+        self.slider.setEnabled(False)
+        self.stack.addWidget(self.slider)
+
+        self.bar = QtWidgets.QProgressBar()
+        self.bar.setRange(0, 359)
+        self.stack.addWidget(self.bar)
+
+        self.lcd = QtWidgets.QLCDNumber()
+        self.lcd.setDigitCount(6)
+        self.stack.addWidget(self.lcd)
+
+        self.compass = CompassWidget()
+        self.stack.addWidget(self.compass)
 
         self.lbl_angle = QtWidgets.QLabel("Angle: —")
         font = self.lbl_angle.font()
@@ -255,6 +395,7 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self.t0 = time.perf_counter()
         self.prev_ang = None
         self.turns = 0.0
+        self.rpm_vals.clear()
         self._scope.calibrate()
         self._timer.start(self.DT_MS)
 
@@ -263,6 +404,8 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         self._scope.disconnect()
         self.connected = False
         self.conn_btn.setText("Connect")
+        if self.wave_win is not None:
+            self.wave_win.close()
 
     # --------------------------------------------------------------- update ---
     def _update(self) -> None:
@@ -277,11 +420,18 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
             elif delta < -math.pi:
                 delta += 2 * math.pi
             self.turns += delta / (2 * math.pi)
-            rpm = delta / (self.DT_MS / 1000.0) * 60 / (2 * math.pi)
+            rpm_inst = delta / (self.DT_MS / 1000.0) * 60 / (2 * math.pi)
+            self.rpm_vals.append(rpm_inst)
+            rpm = sum(self.rpm_vals) / len(self.rpm_vals)
         self.prev_ang = ang
 
         deg = math.degrees(ang) % 360
-        self.dial.setValue(int(deg))
+        val = int(deg)
+        self.dial.setValue(val)
+        self.slider.setValue(val)
+        self.bar.setValue(val)
+        self.lcd.display(f"{deg:6.1f}")
+        self.compass.setAngle(ang)
         self.lbl_angle.setText(f"Angle: {deg:.1f}°")
         self.lbl_speed.setText(f"Speed: {rpm:.1f} RPM")
         self.lbl_turns.setText(f"Turns: {self.turns:.2f}")
@@ -291,16 +441,30 @@ class MotorGaugeDemo(QtWidgets.QMainWindow):
         if self.connected:
             self._scope.calibrate()
 
+    def _show_help(self) -> None:
+        msg = (
+            "Start the motor and rotate it slowly through at least one full "
+            "turn while calibration samples the raw sine and cosine signals. "
+            "Extreme noise or clipping may cause inaccurate results."
+        )
+        QtWidgets.QMessageBox.information(self, "Calibration Help", msg)
+
     def _show_waveforms(self) -> None:
-        import subprocess, sys, os
-        script = os.path.join(os.path.dirname(__file__), "InductiveSensorDemo.py")
-        subprocess.Popen([sys.executable, script])
+        if self.wave_win is None:
+            self.wave_win = WaveformWindow(self._scope)
+        self.wave_win.show()
+        self.wave_win.raise_()
+
+    def _next_mode(self) -> None:
+        idx = (self.stack.currentIndex() + 1) % self.stack.count()
+        self.stack.setCurrentIndex(idx)
+        self.mode_btn.setText(f"Mode: {self.modes[idx]}")
 
 
 def main() -> None:
     app = QtWidgets.QApplication(sys.argv)
     win = MotorGaugeDemo()
-    win.resize(300, 400)
+    win.resize(400, 500)
     win.show()
     sys.exit(app.exec())
 
