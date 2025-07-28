@@ -10,7 +10,8 @@ This repository showcases several demos built around the LX34070A inductive sens
 
 ## Included Demos
 
-- **`MotorGaugeDemo.py`** – PyQt6 application displaying the motor angle on multiple widgets. It can also plot sine and cosine waveforms and includes a calibration routine.
+- **`MotorGaugeDemo.py`** – PyQt6 application displaying the motor angle on multiple widgets. It can also plot sine and cosine waveforms and includes a calibration routine (Qt5 variant available).
+- **`MotorGaugeDemo_Qt5.py`** – PyQt5 version of the gauge demo for easier deployment on older systems.
 - **`KidMotorGaugeDemo.py`** – Simplified gauge designed for kids with a colourful dial and spinning star.
 - **`InductiveSensorDemo.py`** – PyQt6 version of the resolver signal monitor built with `pyqtgraph`.
 - **`InductiveSensorDemoTk.py`** – Tkinter variant of the resolver demo using `matplotlib` for plotting.
@@ -28,7 +29,7 @@ This repository showcases several demos built around the LX34070A inductive sens
 
 - Python 3.11+
 - [pyX2Cscope](https://pypi.org/project/pyx2cscope/)
-- Optional packages: `pyqtgraph`, `PyQt6`, `matplotlib`, `pandas` and `scipy`
+- Optional packages: `pyqtgraph`, `PyQt5` or `PyQt6`, `matplotlib`, `pandas` and `scipy`
 - A Microchip board with the LX34070A sensor (for hardware mode)
 - A dsPIC33CK64MC105 Curiosity nano board
 
@@ -45,11 +46,13 @@ This repository showcases several demos built around the LX34070A inductive sens
    ```
 3. (Optional) Install plotting and GUI dependencies:
    ```bash
-   pip install PyQt6 pyqtgraph matplotlib pandas scipy
+   pip install PyQt5 pyqtgraph matplotlib pandas scipy
+   # or use PyQt6 if preferred
    ```
 4. Run any demo, for example the gauge:
    ```bash
-   python MotorGaugeDemo.py
+   python MotorGaugeDemo.py       # PyQt6 version
+   python MotorGaugeDemo_Qt5.py   # PyQt5 version
    ```
 
 ## Usage Overview
