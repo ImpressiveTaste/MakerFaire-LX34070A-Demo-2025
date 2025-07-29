@@ -16,7 +16,7 @@ This repository showcases several demos built around the LX34070A inductive sens
 - **`InductiveSensorDemo.py`** – PyQt6 version of the resolver signal monitor built with `pyqtgraph`.
 - **`InductiveSensorDemoTk.py`** – Tkinter variant of the resolver demo using `matplotlib` for plotting.
 - **`MotorLogger.py`** – A feature-rich logger that can start/stop the motor, log up to five variables with per-channel scaling and export the data.
-- **`main.c`** – Minimal firmware reading raw sine/cosine values and exposing them, along with the calculated position, via X2Cscope. This is the meain.c file running in the dsPIC33CK. for the whole project extract the .zip file provided and open it through mplabXide. the .elf file can also be founf in the project folder in the .dist directory.
+- **`main.c`** – Minimal firmware that samples the LX34070A resolver, normalises the data and publishes it via X2Cscope. It also drives quadrature A/B/Z outputs so the board can serve as a resolver-to-encoder converter. This is the `main.c` file running on the dsPIC33CK; extract the accompanying project zip and open it in MPLAB X IDE to rebuild. The compiled ELF is under the `dist` folder.
 
 ## Features
 
@@ -62,8 +62,7 @@ This repository showcases several demos built around the LX34070A inductive sens
 3. For the gauge demos, use **Change View** to cycle through the different widgets.
 4. In `MotorLogger.py`, set the desired speed, scaling factor and sample interval then press **START**. Use **STOP** to end the capture early, plot the results or save them to file.
 5. `InductiveSensorDemo.py` and `InductiveSensorDemoTk.py` display sine and cosine signals along with the calculated angle. Both offer basic trigger options.
-6. `main.c` shows how the MCU collects ADC samples, normalizes them and exposes variables to X2Cscope.
-
+6. `main.c` shows how the MCU collects ADC samples, normalizes them and exposes variables to X2Cscope. It also demonstrates generating A/B/Z pulses, turning the resolver into an incremental encoder.
 ## How the Pieces Fit Together
 
 The firmware periodically samples the resolver signals and computes the position using `atan2f`. These variables are exposed through X2Cscope so the Python GUIs can read them. The GUIs rely on a small wrapper class that hides the difference between real hardware and demo mode. Each demo updates its widgets every few milliseconds using `QTimer` or Tkinter's `after` callbacks. The logger additionally configures scope channels to capture all variables at a fixed rate and writes the scaled values to memory before optionally saving them.
