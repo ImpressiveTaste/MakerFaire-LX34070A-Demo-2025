@@ -31,6 +31,17 @@
 #include "mcc_generated_files/timer/sccp2.h" // TODO: Replace {timer_header} with the corresponding timer header file for your project (ex: tmr1.h)
 
 #include <math.h> // For atan2f
+/*
+ * Demo firmware reading LX34070A resolver signals on a dsPIC33CK.
+ * The ADC collects sine and cosine, normalises them and computes
+ * the angle via atan2f. All values are published through X2Cscope
+ * so the Python GUIs can display them.
+ *
+ * The code also outputs quadrature A/B/Z pulses on RB7-9. With a
+ * suitable count setting, the board becomes a resolver-to-encoder
+ * converter that plugs into any controller expecting standard
+ * incremental feedback.
+ */
 
 // ---------------------------------------------------------------------------
 // Encoder GPIO helper macros (using RB7/RB8/RB9 for A/B/Z)
@@ -103,6 +114,9 @@ static void Blink_LED(void)
 }
 
 // Convert resolver_position to quadrature encoder signals
+// Each mechanical revolution is split into counts_per_rev increments,
+// producing standard A/B/Z pulses so external drives can treat the
+// resolver like an incremental encoder.
 static void UpdateEncoderOutputs(void)
 {
     float angle = resolver_position;
