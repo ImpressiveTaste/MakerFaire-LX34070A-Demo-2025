@@ -32,6 +32,24 @@
 
 #include <math.h> // For atan2f
 
+// ---------------------------------------------------------------------------
+// Encoder GPIO helper macros (using RB7/RB8/RB9 for A/B/Z)
+// ---------------------------------------------------------------------------
+#ifndef ENCA_SetHigh
+#define ENCA_SetHigh()   (_LATB7 = 1)
+#define ENCA_SetLow()    (_LATB7 = 0)
+#endif
+
+#ifndef ENCB_SetHigh
+#define ENCB_SetHigh()   (_LATB8 = 1)
+#define ENCB_SetLow()    (_LATB8 = 0)
+#endif
+
+#ifndef ENCZ_SetHigh
+#define ENCZ_SetHigh()   (_LATB9 = 1)
+#define ENCZ_SetLow()    (_LATB9 = 0)
+#endif
+
 static struct ADC_INTERFACE *adc = &ADC1; // TODO: Replace with the ADC instance in your project
 
 static volatile uint16_t sin_raw=0;
@@ -46,6 +64,11 @@ static volatile float sin_calibrated = 0.0f;
 static volatile float cos_calibrated = 0.0f;
 //static bool printResult = false;
 static volatile float resolver_position = 0.0f;   // In radians
+// Encoder emulation variables (ABZ)
+static volatile uint8_t encoder_A = 0;
+static volatile uint8_t encoder_B = 0;
+static volatile uint8_t encoder_Z = 0;
+static volatile uint16_t counts_per_rev = 500;     // counts per mechanical revolution
 //static volatile bool resolver_sample_ready = false;
 // Internal flags to track sampling state
 static bool sin_sampled = false;
@@ -79,6 +102,53 @@ static void Blink_LED(void)
     LED0_Toggle();
 }
 
+// Convert resolver_position to quadrature encoder signals
+static void UpdateEncoderOutputs(void)
+{
+    float angle = resolver_position;
+    if(angle < 0.0f)
+    {
+        angle += 2.0f * (float)M_PI;
+    }
+
+    int totalStates = counts_per_rev * 4;
+    int idx = (int)((angle / (2.0f * (float)M_PI)) * (float)totalStates);
+    if(idx >= totalStates)
+    {
+        idx = totalStates - 1;
+    }
+
+    int quadState = idx % 4;
+    int count = idx / 4;
+
+    uint8_t a, b;
+    switch(quadState)
+    {
+        case 0: a = 0; b = 0; break;
+        case 1: a = 1; b = 0; break;
+        case 2: a = 1; b = 1; break;
+        default: a = 0; b = 1; break;
+    }
+
+    uint8_t z = (count == 0) ? 1 : 0;
+
+    if(a != encoder_A)
+    {
+        encoder_A = a;
+        if(a) ENCA_SetHigh(); else ENCA_SetLow();
+    }
+    if(b != encoder_B)
+    {
+        encoder_B = b;
+        if(b) ENCB_SetHigh(); else ENCB_SetLow();
+    }
+    if(z != encoder_Z)
+    {
+        encoder_Z = z;
+        if(z) ENCZ_SetHigh(); else ENCZ_SetLow();
+    }
+}
+
 int main(void)
 {
     
@@ -93,12 +163,13 @@ int main(void)
 
     while(1)
     {
-        if (sin_sampled && cos_sampled){//to qork correctly sin_calibrated and cos_calibrated need to becenterd at zero
-        resolver_position = atan2f(sin_calibrated, cos_calibrated); // returns value in radians [-π, π]
-        //resolver_sample_ready = true;
-        // Reset for next sampling round
-        sin_sampled = false;
-        cos_sampled = false;
+        if (sin_sampled && cos_sampled){ // to work correctly sin_calibrated and cos_calibrated need to be centered at zero
+            resolver_position = atan2f(sin_calibrated, cos_calibrated); // returns value in radians [-π, π]
+            UpdateEncoderOutputs();
+            //resolver_sample_ready = true;
+            // Reset for next sampling round
+            sin_sampled = false;
+            cos_sampled = false;
         }
         X2Cscope_Communicate();
     }    
