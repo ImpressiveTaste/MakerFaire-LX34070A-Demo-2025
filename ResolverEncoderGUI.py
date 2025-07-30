@@ -196,18 +196,17 @@ class _ScopeWrapper:
         )
 
 class WaveformWindow(QtWidgets.QMainWindow):
-    """Window plotting resolver waveforms using ``pyqtgraph``."""
-    DT_MS = 50
-    MAX_SAMPLES = 500
+    """Waveform viewer matching the motor gauge demo."""
+
+    DT_MS = 20
 
     def __init__(self, scope: _ScopeWrapper) -> None:
         super().__init__()
         self.setWindowTitle("Resolver Waveforms")
+        pg.setConfigOptions(antialias=True)
 
         self.scope = scope
         self.t0 = time.perf_counter()
-        self._prev_ang: float | None = None
-        self._rot_accum = 0.0
 
         central = QtWidgets.QWidget()
         vbox = QtWidgets.QVBoxLayout(central)
@@ -217,58 +216,145 @@ class WaveformWindow(QtWidgets.QMainWindow):
         self.plot.setLabel("bottom", "Time", units="s")
         self.plot.setLabel("left", "Value")
         vbox.addWidget(self.plot)
+
+        ctrl = QtWidgets.QHBoxLayout()
+        ctrl.addWidget(QtWidgets.QLabel("Time window:"))
+        self.win_spin = QtWidgets.QDoubleSpinBox()
+        self.win_spin.setRange(0.1, 100.0)
+        self.win_spin.setSingleStep(0.1)
+        self.win_spin.setValue(1.0)
+        ctrl.addWidget(self.win_spin)
+        ctrl.addWidget(QtWidgets.QLabel("Trigger:"))
+        self.trigger_combo = QtWidgets.QComboBox()
+        self.trigger_combo.addItems(["Sine", "Cosine", "Angle"])
+        ctrl.addWidget(self.trigger_combo)
+        self.trig_enable = QtWidgets.QCheckBox("Enable")
+        self.trig_enable.setChecked(False)
+        ctrl.addWidget(self.trig_enable)
+        self.time_reset = QtWidgets.QCheckBox("Timed reset")
+        self.time_reset.setChecked(False)
+        self.time_reset.setToolTip(
+            "When unchecked, the graph scrolls continuously.\n"
+            "When checked, the display resets after each time window \n"
+            "if trigger is disabled."
+        )
+        ctrl.addWidget(self.time_reset)
+        ctrl.addStretch(1)
+        vbox.addLayout(ctrl)
+
+        width_ctrl = QtWidgets.QHBoxLayout()
+        width_ctrl.addWidget(QtWidgets.QLabel("Sine width:"))
+        self.s_width = QtWidgets.QDoubleSpinBox()
+        self.s_width.setRange(0.5, 10.0)
+        self.s_width.setSingleStep(0.5)
+        self.s_width.setValue(1.5)
+        width_ctrl.addWidget(self.s_width)
+        width_ctrl.addWidget(QtWidgets.QLabel("Cosine width:"))
+        self.c_width = QtWidgets.QDoubleSpinBox()
+        self.c_width.setRange(0.5, 10.0)
+        self.c_width.setSingleStep(0.5)
+        self.c_width.setValue(1.5)
+        width_ctrl.addWidget(self.c_width)
+        width_ctrl.addWidget(QtWidgets.QLabel("Angle width:"))
+        self.a_width = QtWidgets.QDoubleSpinBox()
+        self.a_width.setRange(0.5, 10.0)
+        self.a_width.setSingleStep(0.5)
+        self.a_width.setValue(1.5)
+        width_ctrl.addWidget(self.a_width)
+        width_ctrl.addStretch(1)
+        vbox.addLayout(width_ctrl)
         self.setCentralWidget(central)
 
-        pen_sin = pg.mkPen("b", width=1)
-        pen_cos = pg.mkPen("g", width=1)
-        pen_ang = pg.mkPen((255, 105, 180), width=1)
+        pen_sin = pg.mkPen("b", width=self.s_width.value())
+        pen_cos = pg.mkPen("g", width=self.c_width.value())
+        pen_ang = pg.mkPen("m", width=self.a_width.value())
         self.curve_sin = self.plot.plot(pen=pen_sin, name="Sine")
         self.curve_cos = self.plot.plot(pen=pen_cos, name="Cosine")
         self.curve_ang = self.plot.plot(pen=pen_ang, name="Angle/π")
 
-        self.data = collections.deque(maxlen=self.MAX_SAMPLES)
+        self.s_width.valueChanged.connect(
+            lambda v: self.curve_sin.setPen(pg.mkPen("b", width=v))
+        )
+        self.c_width.valueChanged.connect(
+            lambda v: self.curve_cos.setPen(pg.mkPen("g", width=v))
+        )
+        self.a_width.valueChanged.connect(
+            lambda v: self.curve_ang.setPen(pg.mkPen("m", width=v))
+        )
+
+        self.data_t: collections.deque[float] = collections.deque()
+        self.data_s: collections.deque[float] = collections.deque()
+        self.data_c: collections.deque[float] = collections.deque()
+        self.data_a: collections.deque[float] = collections.deque()
+
+        self.prev_trig_val = 0.0
+        self.trigger_level = 0.0
+        self.t0_trigger = time.perf_counter()
 
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self._update)
 
-    def showEvent(self, event: QtGui.QShowEvent) -> None:  # type: ignore
+    def showEvent(self, event: QtGui.QShowEvent) -> None:  # noqa: D401
         self.t0 = time.perf_counter()
-        self.data.clear()
-        self._prev_ang = None
-        self._rot_accum = 0.0
-
+        self.t0_trigger = self.t0
+        self.prev_trig_val = 0.0
+        self.data_t.clear()
+        self.data_s.clear()
+        self.data_c.clear()
+        self.data_a.clear()
         self.timer.start(self.DT_MS)
         super().showEvent(event)
 
-    def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # type: ignore
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # noqa: D401
         self.timer.stop()
         super().closeEvent(event)
 
     def _update(self) -> None:
         s, c, ang = self.scope.read_waveforms()
-        if self._prev_ang is not None:
-            diff = ang - self._prev_ang
-            if diff > math.pi:
-                diff -= 2 * math.pi
-            elif diff < -math.pi:
-                diff += 2 * math.pi
-            self._rot_accum += abs(diff)
-            if self._rot_accum >= 8 * math.pi:
-                self._rot_accum = 0.0
-                self.t0 = time.perf_counter()
-                self.data.clear()
-        self._prev_ang = ang
-        now = time.perf_counter() - self.t0
-        self.data.append((now, s, c, ang / math.pi))
-        times = [d[0] for d in self.data]
-        sin_v = [d[1] for d in self.data]
-        cos_v = [d[2] for d in self.data]
-        ang_v = [d[3] for d in self.data]
-        self.curve_sin.setData(times, sin_v)
-        self.curve_cos.setData(times, cos_v)
-        self.curve_ang.setData(times, ang_v)
-        if times:
-            self.plot.setXRange(max(0, times[-1] - 5), times[-1])
+
+        trig_map = {"Sine": s, "Cosine": c, "Angle": ang}
+        trig_val = trig_map[self.trigger_combo.currentText()]
+        now_abs = time.perf_counter()
+        win = self.win_spin.value()
+
+        if (
+            self.trig_enable.isChecked()
+            and self.prev_trig_val < self.trigger_level <= trig_val
+        ):
+            self.t0_trigger = now_abs
+            self.data_t.clear()
+            self.data_s.clear()
+            self.data_c.clear()
+            self.data_a.clear()
+        elif not self.trig_enable.isChecked() and self.time_reset.isChecked():
+            if now_abs - self.t0_trigger >= win:
+                self.t0_trigger = now_abs
+                self.data_t.clear()
+                self.data_s.clear()
+                self.data_c.clear()
+                self.data_a.clear()
+
+        self.prev_trig_val = trig_val
+        now = now_abs - self.t0_trigger
+
+        self.data_t.append(now)
+        self.data_s.append(s)
+        self.data_c.append(c)
+        self.data_a.append(ang / math.pi)
+
+        while self.data_t and self.data_t[0] < now - win:
+            self.data_t.popleft()
+            self.data_s.popleft()
+            self.data_c.popleft()
+            self.data_a.popleft()
+
+        self.curve_sin.setData(list(self.data_t), list(self.data_s))
+        self.curve_cos.setData(list(self.data_t), list(self.data_c))
+        self.curve_ang.setData(list(self.data_t), list(self.data_a))
+        if self.trig_enable.isChecked() or self.time_reset.isChecked():
+            self.plot.setXRange(0, win)
+        else:
+            self.plot.setXRange(max(0, now - win), now)
 
 
 
