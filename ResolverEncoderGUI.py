@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 import collections
 from PyQt6 import QtCore, QtGui, QtWidgets
+import pyqtgraph as pg
 
 
 try:
@@ -195,13 +196,13 @@ class _ScopeWrapper:
         )
 
 class WaveformWindow(QtWidgets.QMainWindow):
-    """Lightweight window showing sine and cosine waveforms."""
+    """Window plotting resolver waveforms using ``pyqtgraph``."""
     DT_MS = 50
     MAX_SAMPLES = 500
 
     def __init__(self, scope: _ScopeWrapper) -> None:
         super().__init__()
-        self.setWindowTitle('Resolver Waveforms')
+        self.setWindowTitle("Resolver Waveforms")
 
         self.scope = scope
         self.t0 = time.perf_counter()
@@ -210,9 +211,20 @@ class WaveformWindow(QtWidgets.QMainWindow):
 
         central = QtWidgets.QWidget()
         vbox = QtWidgets.QVBoxLayout(central)
-        self.canvas = _WaveformCanvas(self)
-        vbox.addWidget(self.canvas)
+        self.plot = pg.PlotWidget(background="w")
+        self.plot.addLegend()
+        self.plot.showGrid(x=True, y=True, alpha=0.2)
+        self.plot.setLabel("bottom", "Time", units="s")
+        self.plot.setLabel("left", "Value")
+        vbox.addWidget(self.plot)
         self.setCentralWidget(central)
+
+        pen_sin = pg.mkPen("b", width=1)
+        pen_cos = pg.mkPen("g", width=1)
+        pen_ang = pg.mkPen((255, 105, 180), width=1)
+        self.curve_sin = self.plot.plot(pen=pen_sin, name="Sine")
+        self.curve_cos = self.plot.plot(pen=pen_cos, name="Cosine")
+        self.curve_ang = self.plot.plot(pen=pen_ang, name="Angle/π")
 
         self.data = collections.deque(maxlen=self.MAX_SAMPLES)
 
@@ -248,42 +260,16 @@ class WaveformWindow(QtWidgets.QMainWindow):
         self._prev_ang = ang
         now = time.perf_counter() - self.t0
         self.data.append((now, s, c, ang / math.pi))
-        self.canvas.update()
+        times = [d[0] for d in self.data]
+        sin_v = [d[1] for d in self.data]
+        cos_v = [d[2] for d in self.data]
+        ang_v = [d[3] for d in self.data]
+        self.curve_sin.setData(times, sin_v)
+        self.curve_cos.setData(times, cos_v)
+        self.curve_ang.setData(times, ang_v)
+        if times:
+            self.plot.setXRange(max(0, times[-1] - 5), times[-1])
 
-
-class _WaveformCanvas(QtWidgets.QWidget):
-    """Very basic plotting widget using QPainter."""
-
-    def __init__(self, window: WaveformWindow) -> None:
-        super().__init__(window)
-        self.win = window
-
-    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401
-        painter = QtGui.QPainter(self)
-        try:
-            rect = self.rect()
-            painter.fillRect(rect, QtCore.Qt.GlobalColor.white)
-            if not self.win.data:
-                return
-            times = [d[0] for d in self.win.data]
-            sin_v = [d[1] for d in self.win.data]
-            cos_v = [d[2] for d in self.win.data]
-            ang_v = [d[3] for d in self.win.data]
-            t0 = times[0]
-            t1 = times[-1] if times[-1] != t0 else t0 + 1e-6
-            sx = rect.width() / (t1 - t0)
-            def pts(vals):
-                return [QtCore.QPointF((t - t0) * sx, rect.bottom() - (v + 1) * rect.height() / 2) for t, v in zip(times, vals)]
-            for values, color in zip((sin_v, cos_v, ang_v), (QtCore.Qt.GlobalColor.blue, QtCore.Qt.GlobalColor.darkGreen, QtCore.Qt.GlobalColor.magenta)):
-                p = pts(values)
-                if p:
-                    path = QtGui.QPainterPath(p[0])
-                    for q in p[1:]:
-                        path.lineTo(q)
-                    painter.setPen(QtGui.QPen(color, 1))
-                    painter.drawPath(path)
-        finally:
-            painter.end()
 
 
 class ResolverEncoderDemo(QtWidgets.QMainWindow):
