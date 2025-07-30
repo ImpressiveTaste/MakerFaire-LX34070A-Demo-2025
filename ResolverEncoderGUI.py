@@ -205,6 +205,8 @@ class WaveformWindow(QtWidgets.QMainWindow):
 
         self.scope = scope
         self.t0 = time.perf_counter()
+        self._prev_ang: float | None = None
+        self._rot_accum = 0.0
 
         central = QtWidgets.QWidget()
         vbox = QtWidgets.QVBoxLayout(central)
@@ -220,6 +222,8 @@ class WaveformWindow(QtWidgets.QMainWindow):
     def showEvent(self, event: QtGui.QShowEvent) -> None:  # type: ignore
         self.t0 = time.perf_counter()
         self.data.clear()
+        self._prev_ang = None
+        self._rot_accum = 0.0
 
         self.timer.start(self.DT_MS)
         super().showEvent(event)
@@ -230,6 +234,18 @@ class WaveformWindow(QtWidgets.QMainWindow):
 
     def _update(self) -> None:
         s, c, ang = self.scope.read_waveforms()
+        if self._prev_ang is not None:
+            diff = ang - self._prev_ang
+            if diff > math.pi:
+                diff -= 2 * math.pi
+            elif diff < -math.pi:
+                diff += 2 * math.pi
+            self._rot_accum += abs(diff)
+            if self._rot_accum >= 8 * math.pi:
+                self._rot_accum = 0.0
+                self.t0 = time.perf_counter()
+                self.data.clear()
+        self._prev_ang = ang
         now = time.perf_counter() - self.t0
         self.data.append((now, s, c, ang / math.pi))
         self.canvas.update()
