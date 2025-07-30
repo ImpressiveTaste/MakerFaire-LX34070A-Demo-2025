@@ -17,6 +17,7 @@ from dataclasses import dataclass
 import collections
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+
 try:
     from pyx2cscope.x2cscope import X2CScope  # type: ignore
 except Exception:  # pragma: no cover - missing dependency
@@ -201,6 +202,7 @@ class WaveformWindow(QtWidgets.QMainWindow):
     def __init__(self, scope: _ScopeWrapper) -> None:
         super().__init__()
         self.setWindowTitle('Resolver Waveforms')
+
         self.scope = scope
         self.t0 = time.perf_counter()
 
@@ -211,12 +213,14 @@ class WaveformWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(central)
 
         self.data = collections.deque(maxlen=self.MAX_SAMPLES)
+
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self._update)
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:  # type: ignore
         self.t0 = time.perf_counter()
         self.data.clear()
+
         self.timer.start(self.DT_MS)
         super().showEvent(event)
 
