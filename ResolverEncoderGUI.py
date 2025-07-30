@@ -199,6 +199,12 @@ class WaveformWindow(QtWidgets.QMainWindow):
     """Waveform viewer matching the motor gauge demo."""
 
     DT_MS = 20
+    # Buffer size cap prevents unbounded growth when large
+    # time windows are selected. With the default update
+    # interval of ``DT_MS`` (20 ms) this stores up to 100 s of
+    # samples, which matches the maximum time window allowed
+    # by the UI.
+    MAX_BUF = int(100_000 / DT_MS)
 
     def __init__(self, scope: _ScopeWrapper) -> None:
         super().__init__()
@@ -282,10 +288,10 @@ class WaveformWindow(QtWidgets.QMainWindow):
             lambda v: self.curve_ang.setPen(pg.mkPen("m", width=v))
         )
 
-        self.data_t: collections.deque[float] = collections.deque()
-        self.data_s: collections.deque[float] = collections.deque()
-        self.data_c: collections.deque[float] = collections.deque()
-        self.data_a: collections.deque[float] = collections.deque()
+        self.data_t: collections.deque[float] = collections.deque(maxlen=self.MAX_BUF)
+        self.data_s: collections.deque[float] = collections.deque(maxlen=self.MAX_BUF)
+        self.data_c: collections.deque[float] = collections.deque(maxlen=self.MAX_BUF)
+        self.data_a: collections.deque[float] = collections.deque(maxlen=self.MAX_BUF)
 
         self.prev_trig_val = 0.0
         self.trigger_level = 0.0
