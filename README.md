@@ -4,6 +4,8 @@
 
 This repository showcases several demos built around the LX34070A inductive sensor. A cheap dsPIC33CK64MC105 Curiosity Nano Board was used to read the signal from the inductive sensor. Python GUIs connect to the dsPIC through [pyX2Cscope](https://x2cscope.github.io/pyx2cscope/) when available, but all programs also have a demo mode that simulates data so they can run standalone.
 
+The LX34070A provides a differential output and operates at 5 V. Because the dsPIC33CK operates at 3.3 V, a resistive divider was used to drop the sensor output and only a single-ended signal was routed to the ADC. For future designs, a 5 V dsPIC such as the dsPIC33EV could be used instead. dsPIC devices are recommended for their motor-control peripherals, fast analog and processing capabilities, and integrated op amps.
+
 ![GUI Demo](GUIMotorGaugeDemo.png)
 
 ![dsPIC33CK with Hardware Connection to LX34070A](realhardware.jpg)
